@@ -19,8 +19,8 @@
 #define OV13850_CHIP_ID_REG     0x300a      // OV13850芯片ID寄存器地址
 #define OV13850_REVISION_REG    0x302a      // OV13850芯片版本寄存器地址     
 #define OV13850_CHIP_ID         0xd850      // OV13850芯片ID值, 读取OV13850_CHIP_ID_REG的值应为0xd850
-#define OV13850_REG_END         0xfffe		// ?
-#define OV13850_REG_DELAY       0xffff		// ?
+#define OV13850_REG_END         0xfffe		// 寄存器结束标志
+#define OV13850_REG_DELAY       0xffff		// 寄存器间隔
 #define OV13850_LINK_FREQ_300MHZ        300000000ULL
 #define OV13850_LANES                   2
 #define OV13850_BITS_PER_SAMPLE         10
@@ -44,7 +44,6 @@ struct ov13850_regval {
 	u16 reg;
 	u8 val;
 };
-
 struct ov13850_mode {
 	const char *name;
 	u32 width;
@@ -76,6 +75,7 @@ struct ov13850_min {
 	struct v4l2_subdev sd;			// 代表V4L2 的sub-device	
 	struct media_pad pad; 			// media graph 中的 source pad
 	struct v4l2_mbus_framefmt fmt;	// 保存当前的pad format
+	struct v4l2_fract max_fps;
 };
 
 // 根据subdev获取ov13850_min结构体指针
@@ -574,6 +574,10 @@ static const struct ov13850_mode ov13850_2112x1568_mode = {
 	.name = "2112x1568_30fps_mode_only",
 	.width = 2112,
 	.height = 1568,
+	.max_fps = {
+		.numerator = 10000,
+		.denominator = 300000,
+	},
 	.hts_def = 0x12c0,
 	.vts_def = 0x0680,
 	.exp_def = 0x0600,
@@ -583,23 +587,16 @@ static const struct ov13850_mode ov13850_2112x1568_mode = {
 };
 
 
-static int ov13850_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
-				struct v4l2_mbus_config *config)
+
+
+static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
+					struct v4l2_subdev_frame_interval *fi)
 {
-	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
+	struct ov13850_min *cam = to_ov13850_min(sd);
 
-	return 0;
-}
-
-
-static int ov13850_g_frame_interval(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_frame_interval *fi)
-{
-	struct ov13850 *ov13850 = to_ov13850(sd);
-	const struct ov13850_mode *mode = ov13850->cur_mode;
-
-	fi->interval = mode->max_fps;
+	mutex_lock(&cam->lock);
+	fi->interval = cam->cur_mode->max_fps;
+	mutex_unlock(&cam->lock);
 
 	return 0;
 }
@@ -1235,6 +1232,19 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 
 	return 0;
 }
+
+static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
+				struct v4l2_mbus_config *config)
+{
+	if (pad_id != OV13850_PAD_SOURCE)
+		return -EINVAL;
+
+	config->type = V4L2_MBUS_CSI2_DPHY;
+	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
+
+	return 0;
+}
+
 static const struct v4l2_subdev_video_ops ov13850_video_ops = {
 	.g_mbus_config = ov13850_min_g_mbus_config,
 	.g_frame_interval = ov13850_min_g_frame_interval,
@@ -1246,10 +1256,11 @@ static const struct v4l2_subdev_pad_ops ov13850_pad_ops = {
 	.enum_frame_size = ov13850_enum_frame_size,
 	.get_fmt = ov13850_get_fmt,
 	.set_fmt = ov13850_set_fmt,
-	.get_mbus_config = ov13850_g_mbus_config,
+	.get_mbus_config = ov13850_min_get_mbus_config,
 };
 
 static const struct v4l2_subdev_ops ov13850_subdev_ops = {
+	.video = &ov13850_video_ops,
 	.pad = &ov13850_pad_ops,
 };
 
