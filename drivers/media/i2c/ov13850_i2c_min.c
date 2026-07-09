@@ -587,20 +587,6 @@ static const struct ov13850_mode ov13850_2112x1568_mode = {
 };
 
 
-
-
-static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
-					struct v4l2_subdev_frame_interval *fi)
-{
-	struct ov13850_min *cam = to_ov13850_min(sd);
-
-	mutex_lock(&cam->lock);
-	fi->interval = cam->cur_mode->max_fps;
-	mutex_unlock(&cam->lock);
-
-	return 0;
-}
-
 static int ov13850_min_read_reg(struct i2c_client *client, u16 reg, 
                                 unsigned int len, u32 *val)
 {
@@ -1241,6 +1227,19 @@ static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
 	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
+
+	return 0;
+}
+
+
+static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
+					struct v4l2_subdev_frame_interval *fi)
+{
+	struct ov13850_min *cam = to_ov13850_min(sd);
+
+	mutex_lock(&cam->lock);
+	fi->interval = cam->cur_mode->max_fps;
+	mutex_unlock(&cam->lock);
 
 	return 0;
 }
