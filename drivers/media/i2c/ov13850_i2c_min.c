@@ -89,6 +89,15 @@ static inline struct ov13850_min *to_ov13850_min(struct v4l2_subdev *sd)
 	// 这里是通过sd成员获取ov13850_min结构体指针
 	return container_of(sd, struct ov13850_min, sd);
 }
+static struct ov13850_min *ov13850_min_from_client(struct i2c_client *client)
+{
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+
+	if (!sd)
+		return NULL;
+
+	return to_ov13850_min(sd);
+}
 
 /*
  * Xclk 24Mhz
@@ -874,9 +883,12 @@ static ssize_t chip_id_show(struct device *dev,
 			    char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	u32 val = 0;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	mutex_lock(&cam->lock);
 	ret = ov13850_min_read_reg(client, OV13850_CHIP_ID_REG, 2, &val);
@@ -895,9 +907,12 @@ static ssize_t revision_show(struct device *dev,
 			     char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	u32 val = 0;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	mutex_lock(&cam->lock);
 	ret = ov13850_min_read_reg(client, OV13850_REVISION_REG, 1, &val);
@@ -916,9 +931,11 @@ static ssize_t reg_addr_show(struct device *dev,
 			     char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	u16 reg;
 
+	if (!cam)
+		return -ENODEV;
 	mutex_lock(&cam->lock);
 	reg = cam->current_reg;
 	mutex_unlock(&cam->lock);
@@ -932,9 +949,11 @@ static ssize_t reg_addr_store(struct device *dev,
 			      size_t count)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	unsigned int reg;
 	int ret;
+	if (!cam)
+		return -ENODEV;
 	// 将输入的字符串转换为无符号整数
 	ret = kstrtouint(buf, 0, &reg);
 	if (ret)
@@ -958,10 +977,13 @@ static ssize_t reg_value_show(struct device *dev,
 			      char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	u16 reg;
 	u32 val = 0;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	mutex_lock(&cam->lock);
 	reg = cam->current_reg;
@@ -980,10 +1002,13 @@ static ssize_t reg_value_store(struct device *dev,
 			       size_t count)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	unsigned int val;
 	u16 reg;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	ret = kstrtouint(buf, 0, &val);
 	if (ret)
@@ -1013,9 +1038,12 @@ static ssize_t array_test_store(struct device *dev,
 				size_t count)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	unsigned int trigger;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	ret = kstrtouint(buf, 0, &trigger);
 	if (ret)
@@ -1042,8 +1070,11 @@ static ssize_t mode_info_show(struct device *dev,
 			      char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	const struct ov13850_mode *mode;
+
+	if (!cam)
+		return -ENODEV;
 
 	mutex_lock(&cam->lock);
 	mode = cam->cur_mode;
@@ -1071,9 +1102,12 @@ static ssize_t mode_apply_store(struct device *dev,
 				size_t count)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	unsigned int trigger;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	ret = kstrtouint(buf, 0, &trigger);
 	if (ret)
@@ -1100,9 +1134,12 @@ static ssize_t full_init_store(struct device *dev,
 			       size_t count)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 	unsigned int trigger;
 	int ret;
+
+	if (!cam)
+		return -ENODEV;
 
 	ret = kstrtouint(buf, 0, &trigger);
 	if (ret)
@@ -1235,7 +1272,42 @@ static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_
 	return 0;
 }
 
+static int ov13850_enum_frame_interval(struct v4l2_subdev *sd,
+				       struct v4l2_subdev_state *state,
+				       struct v4l2_subdev_frame_interval_enum *fie)
+{
 
+	struct ov13850_min *cam = to_ov13850_min(sd);
+	const struct ov13850_mode *mode;
+
+	if (fie->pad != OV13850_PAD_SOURCE)
+		return -EINVAL;
+
+	if (fie->index > 0)
+		return -EINVAL;
+
+	if (fie->code && fie->code != OV13850_MBUS_CODE)
+		return -EINVAL;
+
+	mutex_lock(&cam->lock);
+
+	mode = cam->cur_mode;
+	// 判断当前模式是否为空，如果为空则返回错误码
+	if (!mode) {
+		mutex_unlock(&cam->lock);
+		return -EINVAL;
+	}
+
+	fie->code = OV13850_MBUS_CODE;
+	fie->width = mode->width;
+	fie->height = mode->height;
+	fie->interval = mode->max_fps;
+
+	mutex_unlock(&cam->lock);
+
+	return 0;
+
+}
 static int ov13850_min_get_frame_interval(struct v4l2_subdev *sd,
 					struct v4l2_subdev_frame_interval *fi)
 {
@@ -1313,6 +1385,7 @@ static const struct v4l2_subdev_video_ops ov13850_video_ops = {
 static const struct v4l2_subdev_pad_ops ov13850_pad_ops = {
 	.enum_mbus_code = ov13850_enum_mbus_code,
 	.enum_frame_size = ov13850_enum_frame_size,
+	.enum_frame_interval = ov13850_enum_frame_interval,
 	.get_fmt = ov13850_get_fmt,
 	.set_fmt = ov13850_set_fmt,
 	.get_mbus_config = ov13850_min_get_mbus_config,
@@ -1357,7 +1430,6 @@ static int ov13850_min_probe(struct i2c_client *client,
 
 	mutex_init(&cam->lock);
 
-	i2c_set_clientdata(client, cam);
     // 获取外部时钟资源
 	cam->xvclk = devm_clk_get(dev, "xvclk");
 	if (IS_ERR(cam->xvclk))
@@ -1411,15 +1483,6 @@ static int ov13850_min_probe(struct i2c_client *client,
 	if (ret)
 		goto err_power_off;
 
-	// 创建 sysfs 属性组，包含芯片ID、版本号、寄存器地址和寄存器值的属性文件
-	ret = sysfs_create_group(&dev->kobj, &ov13850_min_attr_group);
-	if (ret) {
-		dev_err(dev, "failed to create sysfs group: %d\n", ret);
-		goto err_power_off;
-	}
-	dev_info(dev, "sysfs ready: chip_id revision reg_addr reg_value array_test mode_info mode_apply full_init\n");
-
-
 	// 初始化 V4L2 sub_dev，绑定 子设备操作函数
 	v4l2_i2c_subdev_init(&cam->sd, client, &ov13850_subdev_ops);
 
@@ -1432,7 +1495,7 @@ static int ov13850_min_probe(struct i2c_client *client,
 	ret = media_entity_pads_init(&cam->sd.entity, OV13850_NUM_PADS, &cam->pad);
 	if (ret) {
 		dev_err(dev, "failed to init media entity pads: %d\n", ret);
-		goto err_remove_sysfs;
+		goto err_power_off;
 	}
 	
 	ret = v4l2_async_register_subdev_sensor(&cam->sd);
@@ -1443,16 +1506,25 @@ static int ov13850_min_probe(struct i2c_client *client,
 
 	dev_info(dev, "v4l2 sensor subdev registered\n");
 
+	// 创建 sysfs 属性组，包含芯片ID、版本号、寄存器地址和寄存器值的属性文件
+	ret = sysfs_create_group(&dev->kobj, &ov13850_min_attr_group);
+	if (ret) {
+		dev_err(dev, "failed to create sysfs group: %d\n", ret);
+		goto err_unregister_subdev;
+	}
+	dev_info(dev, "sysfs ready: chip_id revision reg_addr reg_value array_test mode_info mode_apply full_init\n");
+
+
 	return 0;
 
 // 错误处理，清理资源的goto需要跟上面函数的调用顺序相反， 保证所有资源都能被正确释放
 
 
+err_unregister_subdev:
+	v4l2_async_unregister_subdev(&cam->sd);
+
 err_cleanup_entity:
 	media_entity_cleanup(&cam->sd.entity);
-
-err_remove_sysfs:
-	sysfs_remove_group(&dev->kobj, &ov13850_min_attr_group);
 
 err_power_off:
 	ov13850_min_power_off(cam);
@@ -1463,13 +1535,20 @@ err_power_off:
 static void ov13850_min_remove(struct i2c_client *client)
 {
     // 获取之前保存进去的驱动私有数据 cam
-    struct ov13850_min *cam = i2c_get_clientdata(client);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ov13850_min *cam;
+
+	if (!sd)
+		return;
+
+	cam = to_ov13850_min(sd);
+	
+	sysfs_remove_group(&client->dev.kobj, &ov13850_min_attr_group);
 	// 注销 V4L2 子设备
 	v4l2_async_unregister_subdev(&cam->sd);
 	media_entity_cleanup(&cam->sd.entity);
 
     ov13850_min_power_off(cam);
-	sysfs_remove_group(&client->dev.kobj, &ov13850_min_attr_group);
 
 	dev_info(&client->dev, "removed\n");
 }
