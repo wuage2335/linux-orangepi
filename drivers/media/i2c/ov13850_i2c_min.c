@@ -29,6 +29,9 @@
 #define OV13850_R2A              0xb2
 #define OV13850_PAD_SOURCE      0
 #define OV13850_NUM_PADS        1
+#define OV13850_REG_CTRL_MODE		0x0100
+#define OV13850_MODE_SW_STANDBY		0x00
+#define OV13850_MODE_STREAMING		0x01
 
 #define OV13850_MBUS_CODE       MEDIA_BUS_FMT_SBGGR10_1X10
 
@@ -66,6 +69,7 @@ struct ov13850_min {
 	struct gpio_desc *pwdn_gpio;
 	struct regulator_bulk_data supplies[OV13850_NUM_SUPPLIES];
 	bool powered;
+	bool streaming;
 
 	struct mutex lock;	// 保护 sysfs 读写过程
 
@@ -1219,7 +1223,7 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int ov13850_min_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
+static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	if (pad_id != OV13850_PAD_SOURCE)
@@ -1232,7 +1236,7 @@ static int ov13850_min_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id
 }
 
 
-static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
+static int ov13850_min_get_frame_interval(struct v4l2_subdev *sd,
 					struct v4l2_subdev_frame_interval *fi)
 {
 	struct ov13850_min *cam = to_ov13850_min(sd);
@@ -1251,9 +1255,58 @@ static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int ov13850_min_s_stream(struct v4l2_subdev *sd, int on)
+{ 
+	struct ov13850_min *cam = to_ov13850_min(sd);
+	struct i2c_client *client = cam->client;
+	int ret = 0;
+	// bool化变量
+	on = !!on;
+	mutex_lock(&cam->lock);
+
+	if (on == cam->streaming)
+		goto unlock;
+
+	if (on) {
+		dev_info(&client->dev, "stream on\n");
+
+		ret = ov13850_min_apply_full_init(cam);
+		if (ret) {
+			dev_err(&client->dev, "failed to apply full init before stream: %d\n", ret);
+			goto unlock;
+		}
+
+		ret = ov13850_min_write_reg(client,
+					    OV13850_REG_CTRL_MODE,
+					    OV13850_MODE_STREAMING);
+		if (ret) {
+			dev_err(&client->dev, "failed to start streaming: %d\n", ret);
+			goto unlock;
+		}
+	} else {
+		dev_info(&client->dev, "stream off\n");
+
+		ret = ov13850_min_write_reg(client,
+					    OV13850_REG_CTRL_MODE,
+					    OV13850_MODE_SW_STANDBY);
+		if (ret) {
+			dev_err(&client->dev, "failed to stop streaming: %d\n", ret);
+			goto unlock;
+		}
+	}
+
+	cam->streaming = on;
+
+unlock:
+	mutex_unlock(&cam->lock);
+
+	return ret;
+
+}
+
 static const struct v4l2_subdev_video_ops ov13850_video_ops = {
-	.g_mbus_config = ov13850_min_g_mbus_config,
-	.g_frame_interval = ov13850_min_g_frame_interval,
+	.s_stream = ov13850_min_s_stream,
+	.g_frame_interval = ov13850_min_get_frame_interval,
 };
 
 
@@ -1262,7 +1315,7 @@ static const struct v4l2_subdev_pad_ops ov13850_pad_ops = {
 	.enum_frame_size = ov13850_enum_frame_size,
 	.get_fmt = ov13850_get_fmt,
 	.set_fmt = ov13850_set_fmt,
-	.get_mbus_config = ov13850_min_g_mbus_config,
+	.get_mbus_config = ov13850_min_get_mbus_config,
 };
 
 static const struct v4l2_subdev_ops ov13850_subdev_ops = {
