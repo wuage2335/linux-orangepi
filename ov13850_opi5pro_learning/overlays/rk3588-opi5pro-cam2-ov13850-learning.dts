@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3588s-orangepi-5", "rockchip,rk3588";
+
+	fragment@0 {
+		target = <&ov13850_2>;
+
+		__overlay__ {
+			compatible = "learning,ov13850-i2c";
+			status = "okay";
+		};
+	};
+};
