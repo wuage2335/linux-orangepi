@@ -8428,7 +8428,6 @@ static int rkcif_fh_release(struct file *filp)
 	struct rkcif_stream *stream = to_rkcif_stream(vnode);
 	struct rkcif_device *cifdev = stream->cifdev;
 	int ret = 0;
-	int on = 0;
 	int i = 0;
 
 	ret = vb2_fop_release(filp);
