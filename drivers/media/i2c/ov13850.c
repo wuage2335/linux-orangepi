@@ -1555,6 +1555,10 @@ static int ov13850_probe(struct i2c_client *client,
 		goto err_free_handler;
 
 	ret = ov13850_check_sensor_id(ov13850, client);
+	if (ret == -ENODEV) {
+		ret = -EPROBE_DEFER;
+		goto err_power_off;
+	}
 	if (ret)
 		goto err_power_off;
 
