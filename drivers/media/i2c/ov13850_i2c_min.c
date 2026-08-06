@@ -13,6 +13,9 @@
 #include <media/v4l2-async.h>
 #include <linux/property.h>
 #include <linux/videodev2.h>
+#include <linux/pm_runtime.h>
+#include <media/v4l2-ctrls.h>
+
 
 
 #define OV13850_XVCLK_FREQ      24000000    // 外部输入时钟频率24MHz
@@ -26,6 +29,28 @@
 #define OV13850_BITS_PER_SAMPLE         10
 #define OV13850_PIXEL_RATE              \
 	(OV13850_LINK_FREQ_300MHZ * 2 * OV13850_LANES / OV13850_BITS_PER_SAMPLE)
+
+#define OV13850_VTS_MAX          0x7fff
+
+#define OV13850_REG_EXPOSURE     0x3500
+#define OV13850_EXPOSURE_MIN     2
+#define OV13850_EXPOSURE_STEP    1
+
+#define OV13850_REG_GAIN_H       0x350a
+#define OV13850_REG_GAIN_L       0x350b
+#define OV13850_GAIN_H_MASK      0x07
+#define OV13850_GAIN_H_SHIFT     8
+#define OV13850_GAIN_L_MASK      0xff
+#define OV13850_GAIN_MIN         0x10
+#define OV13850_GAIN_MAX         0xf8
+#define OV13850_GAIN_STEP        1
+#define OV13850_GAIN_DEFAULT     0x10
+
+#define OV13850_REG_TEST_PATTERN         0x5e00
+#define OV13850_TEST_PATTERN_ENABLE      0x80
+#define OV13850_TEST_PATTERN_DISABLE     0x00
+
+#define OV13850_REG_VTS          0x380e
 #define OV13850_R2A              0xb2
 #define OV13850_PAD_SOURCE      0
 #define OV13850_NUM_PADS        1
@@ -38,6 +63,18 @@ static const char * const ov13850_supply_names[] = {
 	"avdd",     // 模拟电源
 	"dovdd",    // IO电源
 	"dvdd",     // 数字核心电源
+};
+
+static const s64 ov13850_link_freq_menu_items[] = {
+	OV13850_LINK_FREQ_300MHZ,
+};
+
+static const char * const ov13850_test_pattern_menu[] = {
+	"Disabled",
+	"Vertical Color Bar Type 1",
+	"Vertical Color Bar Type 2",
+	"Vertical Color Bar Type 3",
+	"Vertical Color Bar Type 4",
 };
 
 struct ov13850_regval {
@@ -73,6 +110,13 @@ struct ov13850_min {
 	u16 current_reg; // 当前准备读写的寄存器
 	const struct ov13850_mode *cur_mode;
 	const struct ov13850_regval *global_regs; // 当前使用的全局寄存器配置表
+
+	struct v4l2_ctrl_handler ctrl_handler;
+	struct v4l2_ctrl *exposure;
+	struct v4l2_ctrl *anal_gain;
+	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *vblank;
+	struct v4l2_ctrl *test_pattern;
 
 	struct v4l2_subdev sd;			// 代表V4L2 的sub-device	
 	struct media_pad pad; 			// media graph 中的 source pad
@@ -1523,7 +1567,6 @@ MODULE_DEVICE_TABLE(of, ov13850_min_of_match);
 // 绑定I2C设备ID，这种方法没有使用设备树的情况下可以使用
 static const struct i2c_device_id ov13850_min_id[] = {
 	{ "ov13850_i2c_min", 0 },
-	{ "ovti,ov13850", 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, ov13850_min_id);
