@@ -52,12 +52,13 @@
 
 ## `ov13850_i2c_min.c` 阶段 2 审查
 
+- 2026-08-06 的未验证 2A 脚手架已加入 V4L2 control/runtime-PM 头文件、control 状态字段、曝光/增益/VTS/测试图常量及菜单数据，并移除了 `i2c:ovti,ov13850` alias。它仍未实现 control 回调、control handler 初始化或 runtime PM，不能加载或绑定验证。
 - 该学习驱动已具备：I2C 多字节读/单字节写、寄存器表写入、R2A revision 选择、global/mode 初始化、上电与下电、芯片 ID 检查、sysfs 寄存器调试、单 pad V4L2 Subdev、固定 RAW10 格式和异步 sensor 注册。
-- 当前至少存在两个源码级编译阻塞：`struct ov13850_mode` 缺少 `max_fps` 成员但初始化和帧间隔查询都在使用它；video ops 引用了未定义的 `ov13850_min_g_mbus_config`，实际已定义函数名是 `ov13850_min_get_mbus_config`。此外，正式驱动只在 pad ops 中挂接 `get_mbus_config`。
+- 历史源码级阻塞（`struct ov13850_mode` 缺少 `max_fps`，以及 video ops 使用错误的 `ov13850_min_g_mbus_config` 名称）已在当前源码中修正为 `max_fps` 成员与 `ov13850_min_get_mbus_config`。这一判断仅来自源码阅读；独立 `O=` 构建尚未在当前阶段执行。
 - 存在高优先级 clientdata 生命周期问题：probe 前段把 `i2c_set_clientdata(client, cam)` 设为私有结构体，但后续 `v4l2_i2c_subdev_init()` 会按 V4L2 I2C Subdev 约定将 clientdata 设为 `struct v4l2_subdev *`。当前 sysfs 回调和 `remove()` 仍把 `i2c_get_clientdata()` 直接当成 `struct ov13850_min *`，会得到错误对象地址。应统一采用“取出 subdev，再通过 `to_ov13850_min(sd)` 回到私有结构体”的正式驱动模式，并在 V4L2 初始化完成后再暴露依赖它的 sysfs 接口。
-- 当前没有 `.s_stream`，而 `full_init` 和 mode 表会强制保持 `0x0100 = 0x00`；因此媒体管线无法通过 V4L2 正式启动 Sensor 输出，这是编译修通后的第一功能缺口。
-- 当前没有 `v4l2_ctrl_handler`，缺少 link frequency、pixel rate、HBLANK、VBLANK、曝光、模拟增益和测试图等 Controls，也没有在 stream on 前统一应用 Controls。
+- 当前源码已经有最小 `.s_stream`，但它尚未持有 runtime-PM 引用，且需要按已确认设计整理为 global init -> mode -> control setup -> `0x0100` 的标准路径。
+- 当前已有 `v4l2_ctrl_handler` 的存储字段及常量/菜单数据，但仍缺少 link frequency、pixel rate、HBLANK、VBLANK、曝光、模拟增益和测试图的 handler 初始化与 `.s_ctrl` 写寄存器逻辑。
 - 当前没有 runtime PM；probe 成功后 Sensor 长期保持上电。后续加入 PM 时，sysfs 寄存器访问也必须持有 PM 引用，不能在掉电状态直接 I2C 访问。
-- 当前 `set_fmt/get_fmt` 没有区分 TRY 与 ACTIVE，只有单一固定模式；还缺少 `enum_frame_interval`、模式数组/最佳匹配以及切换模式时的控制范围更新。
+- 当前 `set_fmt/get_fmt` 仍是单一固定模式，未区分 TRY 与 ACTIVE；已有 frame-interval 枚举雏形，但仍缺少双模式数组、最佳匹配及切换模式时的 control 范围更新。
 - 其他后续完善项包括 pinctrl default/sleep、时钟实际频率检查、power_on 失败路径回滚、streaming 状态、Rockchip module info，以及收敛大量 `dev_info` 和原始 sysfs 写寄存器接口。
 - 模式的 2112x1568、HTS/VTS、30 fps 与 120 MHz pixel rate 常量均直接继承自同仓库正式驱动；不能仅凭通用 `pixel_rate/(HTS*VTS)` 公式断定帧率错误，需结合 OV13850 的时序单位和实测验证。

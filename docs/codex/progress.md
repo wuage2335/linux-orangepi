@@ -1,5 +1,13 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-06
+
+- 将阶段 2 的学习驱动设计和实施计划存入仓库：`docs/superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md` 与 `docs/superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md`。
+- 用户选择以 `ov13850_i2c_min.c` 作为阶段 2 的练习实现，正式 `ov13850.c` 仅作只读参考；学习 binding 只能是 `learning,ov13850-i2c`。
+- 用户明确要求先完成阶段 2 编写，再统一构建和上机验证。当前没有新增构建、模块装卸、设备树绑定或板端采集证据。
+- 已写入 2A 的部分静态脚手架：V4L2 control/runtime-PM 头文件、control 状态字段、寄存器常量、link-frequency/测试图菜单，并移除了竞争性的 `i2c:ovti,ov13850` alias。
+- 阶段性提交 `5f9f87714 wip(ov13850): add stage 2 learning scaffolding` 包含上述脚手架和两份设计文档；后续继续前需重新检查其推送状态。
+
 ## 2026-07-15
 
 - 已加载 `using-superpowers` 技能。
@@ -28,7 +36,7 @@
 - 核验时发现自动化首次落盘为每 2 小时，已显式修正为每 1 小时；本地配置现为 `ACTIVE` 且项目目标为当前 `Camera开发` 工作区。
 - 用户将交接文档自动更新调整为每天 06:00 至 24:00 每两小时一次；已核验并同步为 00:00、06:00、08:00、10:00、12:00、14:00、16:00、18:00、20:00、22:00 触发，其中 00:00 对应前一日 24:00。
 - 用户明确本项目是学习项目：用户是主要实践者，Codex 应以导师和结对伙伴方式推进；未经明确授权，不得一次性代写完整阶段、完整功能或大批量代码。该原则已写入任务计划、完整项目计划和交接文档。
-- 已只读审查 WSL `main` 中的 `drivers/media/i2c/ov13850_i2c_min.c` 并对照正式 `ov13850.c`；确认学习驱动已经完成 bring-up 与 V4L2 Subdev 骨架，但仍有编译阻塞，且缺少 `s_stream`、Controls、runtime PM 和完整格式协商。阶段 2 已拆为 2A 至 2F，当前只推进 2A。
+- 当时已只读审查 WSL `main` 中的 `drivers/media/i2c/ov13850_i2c_min.c` 并对照正式 `ov13850.c`；随后源码已补上 `max_fps`、正确的 mbus-config 回调和最小 `.s_stream`。Controls、runtime PM 与完整格式协商仍待完成；最新状态以 2026-08-06 记录为准。
 - 进一步确认 `v4l2_i2c_subdev_init()` 会改变 I2C clientdata 的对象类型；当前 sysfs 回调和 `remove()` 的直接私有结构体转换不成立，已将其纳入 2A 的基础装卸修正范围。
 
 ## 2026-07-18

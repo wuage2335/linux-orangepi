@@ -3,9 +3,9 @@
 > 适用项目：`linux-orangepi/ov13850_opi5pro_learning`
 > 板卡：Orange Pi 5 Pro（RK3588S）
 > 文档用途：持续记录内核构建、部署、启动、模块和摄像头 bring-up 中遇到的问题、证据、修复方法与验证结果。
-> 最后更新：2026-07-28
+> 最后更新：2026-08-06
 
-## 1. 当前已验证基线
+## 1. 已验证基线（历史记录，需重新确认当前板端状态）
 
 ### 1.1 主机与板端
 
@@ -14,7 +14,9 @@
 - 内核源码：`/home/wuage2335/linux-orangepi`
 - 独立输出目录：`/home/wuage2335/linux-orangepi/out/orangepi5pro-livecfg-baseline`
 - 学习目录：`/home/wuage2335/linux-orangepi/ov13850_opi5pro_learning`
-- 板端 SSH：`orangepi@192.168.1.17`
+- 历史 Wi-Fi SSH：`orangepi@192.168.1.17`（原网络，SSID 未记录）
+- 后来观测的 Wi-Fi SSH：`orangepi@192.168.0.112`（SSID `1702`）
+- 两个地址均为历史记录；部署或排查前先通过串口或当前网络重新确认可达地址。
 - 板端串口：`COM20`，`1500000 8N1`
 
 ### 1.2 当前可启动内核
@@ -25,12 +27,12 @@ Image size:     41329152 bytes
 Image SHA256:   2538b72cb4ad0576a56d411ea95fba4b55f0b98983ab4e5ff2fd922f049003bd
 ```
 
-当前已验证：
+当时已验证：
 
 - 6.1.99 内核可以在 Orange Pi 5 Pro 上启动并进入用户空间。
 - 串口控制台正常。
 - `bcmdhd` 能自动加载。
-- `wlan0` 能获得 `192.168.1.17/24`。
+- 在原 Wi-Fi 网络中，`wlan0` 获得过 `192.168.1.17/24`。
 - SSH 和 NetworkManager 正常。
 - 当前只部署了满足 Wi-Fi/SSH 的最小模块树，不是完整的内核模块发行包。
 

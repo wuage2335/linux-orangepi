@@ -10,6 +10,8 @@
 4. [`findings.md`](findings.md)：源码阅读、驱动审查和环境发现。
 5. [`RK3588摄像头低延迟链路项目计划.md`](RK3588摄像头低延迟链路项目计划.md)：完整技术路线和各阶段验收标准。
 6. [`orangepi5pro-kernel-troubleshooting.md`](orangepi5pro-kernel-troubleshooting.md)：Orange Pi 5 Pro 内核构建、启动、模块、部署和回滚问题手册。
+7. [`../superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md`](../superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md)：已确认的学习驱动阶段 2 设计边界。
+8. [`../superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md`](../superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md)：逐函数的阶段 2 实施与统一验证计划。
 
 ## 当前项目主线
 
@@ -19,6 +21,11 @@ OV13850/MIPI -> CSI/DPHY -> CIF/ISP -> V4L2
 ```
 
 当前处于阶段 2“V4L2 驱动完善”。阶段 0“基线验证”和阶段 1“传感器与 DTS”此前已完成，不应无依据重复执行。
+
+当前执行状态：学习驱动 2A 已写入一部分静态脚手架（V4L2 control/PM 头文件、
+control 状态字段、寄存器常量、菜单数据，并移除竞争性的
+`i2c:ovti,ov13850` alias）。阶段 2 代码尚未完成，且按用户要求尚未构建、
+加载模块或上机验证；不能据此宣称驱动可用。
 
 ## 协作约束
 
