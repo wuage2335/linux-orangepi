@@ -1,6 +1,6 @@
 # RK3588 摄像头链路任务交接文档
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-06（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-21（Asia/Shanghai）。
 
 ## 0. 协作约束
 
@@ -12,18 +12,21 @@
 ## 1. 当前状态
 
 - 项目：Orange Pi 5 Pro（RK3588S）上的 OV13850 CAM2 摄像头链路。
-- 项目阶段：阶段 2“V4L2 驱动完善”；阶段 0 基线与阶段 1 DTS 已有历史实机证据。
+- 项目阶段：阶段 2“V4L2 驱动完善”已完成核心实机验收；下一阶段为阶段 3
+  “ISP 与 RGA 图像处理”。
 - 正式交付/参考驱动：`drivers/media/i2c/ov13850.c`。
 - 当前学习实现：`drivers/media/i2c/ov13850_i2c_min.c`，仅能绑定
   `learning,ov13850-i2c`，不得与正式 `ovti,ov13850` binding 竞争。
-- 2A 已写入但未验证的脚手架：V4L2 control 和 runtime-PM 头文件、control 状态
-  字段、曝光/增益/VTS/测试图常量、link-frequency 与测试图菜单，并删除了
-  `i2c:ovti,ov13850` alias。
-- 尚未完成：controls 回调与初始化、runtime PM、两模式 TRY/ACTIVE 协商、完整
-  probe/remove 清理、构建、模块装卸和实机测试。
-- 当前分支：`main`；最近的阶段性本地提交为
-  `5f9f87714 wip(ov13850): add stage 2 learning scaffolding`。继续前始终重新读取
-  `git status -sb`，不要假定它已经推送。
+- 阶段 2A-2F 已实现并完成统一构建/实机验证：controls、runtime PM、两模式
+  TRY/ACTIVE、完整 lifecycle、内建启动、media graph、双模式采集和重复启停。
+- 当前内核 release：`6.1.99-opi5pro-livecfg-baseline`；学习驱动必须为
+  `CONFIG_VIDEO_OV13850_I2C_MIN=y`。作为模块晚加载时会错过 Rockchip CIF/ISP
+  async notifier 的组图窗口，虽然 I2C probe 成功，但不会生成 sensor subdev。
+- 当前板端 `/boot/Image` SHA256：
+  `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
+- 当前分支：`main`；阶段 2 学习驱动源码提交为
+  `592d4171c feat(ov13850): complete stage 2 learning driver`。验证文档提交见最新
+  `git log`；继续前始终重新读取 `git status -sb`。
 
 ## 2. 已验证的历史事实与当前边界
 
@@ -43,6 +46,8 @@
   `orangepi@192.168.0.112`。
 - 两者都是历史记录，不代表板卡当前在线。任何 SSH、部署或摄像头结论前，先从
   串口或实际网络重新确认地址、`uname -r`、`wlan0` 和默认路由。
+- 2026-08-21 实机验证使用的当前地址：`orangepi@192.168.1.10`。它仍可能随
+  DHCP 变化，不能写死到部署脚本。
 - 串口参数：`1500000 8N1`；历史 Windows 端口为 `COM20`。
 
 ### 2.3 OV13850 历史修复证据
@@ -84,16 +89,23 @@
 通过 `ov13850_min_from_client()` 和 `to_ov13850_min()` 回到私有结构，不能直接
 转换成 `struct ov13850_min *`。
 
-## 5. 阶段完成后的统一验证顺序
+## 5. 阶段 2 实机验收结果（2026-08-21）
 
-1. 在同一 `O=` 树先构建 `Image`，再构建 `ov13850_i2c_min.ko`，取得匹配的
-   `vmlinux` 与 `Module.symvers`。
-2. 检查 release、vermagic 和 `modinfo` aliases；不得存在
-   `i2c:ovti,ov13850`。
-3. 先在不改变真实 CAM2 binding 的条件下测试模块装卸。
-4. 仅在有回滚路径的受控 DT 配置中测试 learning binding。
-5. 执行两模式/controls 枚举、`v4l2-compliance`、连续 stream 启停、持续采集，
-   并检查 D-PHY、CIF、ISP 和内核日志。
+1. 模块 vermagic/alias 和装卸通过，但晚加载无法进入 media graph；改为内建后，
+   sensor 在启动约 6.7 秒 probe，并形成 `sensor -> D-PHY -> CSI2 -> CIF` 链路。
+2. 首次 STREAMON 的 ENOMEM 不是 CMA 不足，而是 `enum_frame_interval()` 拒绝
+   CIF 传入的 `code=0`，使 dummy buffer size 为 0。仅在非零 code 时校验后，
+   同一测试由失败转为成功。
+3. 2112x1568 RAW10 单帧 4,415,488 字节、持续约 29.97 fps；4224x3136 RAW10
+   单帧 16,859,136 字节、持续约 7.51 fps。
+4. TRY 不改变 ACTIVE；流中切 ACTIVE 返回 `-EBUSY`；controls 寄存器写入正确。
+   低分辨率连续 5 次启停成功，停流后 PM 均为 `suspended`、usage 0，无新增
+   CRC/ECC/timeout/overflow。
+5. `v4l2-compliance` 42/43；唯一失败为 control event 订阅。正式参考驱动也未实现
+   该接口，当前记为非阻塞标准化遗留项。
+
+下一步从阶段 3 开始：区分 CIF RAW 旁路与 RKISP 输出，建立 RAW -> ISP -> NV12
+路径，再按需接入 RGA。`ov13855-2@36` 仍是独立 DT 清理项，不得混入后续工作。
 
 ## 6. 文档维护
 

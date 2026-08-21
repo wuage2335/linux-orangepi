@@ -1,11 +1,11 @@
 # Orange Pi 5 Pro 内核问题与修复记录
 
-> 适用项目：`linux-orangepi/ov13850_opi5pro_learning`  
-> 板卡：Orange Pi 5 Pro（RK3588S）  
-> 文档用途：持续记录内核构建、部署、启动、模块和摄像头 bring-up 中遇到的问题、证据、修复方法与验证结果。  
-> 最后更新：2026-07-18
+> 适用项目：`linux-orangepi/ov13850_opi5pro_learning`
+> 板卡：Orange Pi 5 Pro（RK3588S）
+> 文档用途：持续记录内核构建、部署、启动、模块和摄像头 bring-up 中遇到的问题、证据、修复方法与验证结果。
+> 最后更新：2026-08-06
 
-## 1. 当前已验证基线
+## 1. 已验证基线（历史记录，需重新确认当前板端状态）
 
 ### 1.1 主机与板端
 
@@ -14,7 +14,9 @@
 - 内核源码：`/home/wuage2335/linux-orangepi`
 - 独立输出目录：`/home/wuage2335/linux-orangepi/out/orangepi5pro-livecfg-baseline`
 - 学习目录：`/home/wuage2335/linux-orangepi/ov13850_opi5pro_learning`
-- 板端 SSH：`orangepi@192.168.1.17`
+- 历史 Wi-Fi SSH：`orangepi@192.168.1.17`（原网络，SSID 未记录）
+- 后来观测的 Wi-Fi SSH：`orangepi@192.168.0.112`（SSID `1702`）
+- 两个地址均为历史记录；部署或排查前先通过串口或当前网络重新确认可达地址。
 - 板端串口：`COM20`，`1500000 8N1`
 
 ### 1.2 当前可启动内核
@@ -25,12 +27,12 @@ Image size:     41329152 bytes
 Image SHA256:   2538b72cb4ad0576a56d411ea95fba4b55f0b98983ab4e5ff2fd922f049003bd
 ```
 
-当前已验证：
+当时已验证：
 
 - 6.1.99 内核可以在 Orange Pi 5 Pro 上启动并进入用户空间。
 - 串口控制台正常。
 - `bcmdhd` 能自动加载。
-- `wlan0` 能获得 `192.168.1.17/24`。
+- 在原 Wi-Fi 网络中，`wlan0` 获得过 `192.168.1.17/24`。
 - SSH 和 NetworkManager 正常。
 - 当前只部署了满足 Wi-Fi/SSH 的最小模块树，不是完整的内核模块发行包。
 
@@ -515,7 +517,176 @@ sudo sync
 
 新部署必须再创建独立的时间戳备份，不要反复覆盖这一份历史备份。
 
-## 13. 新问题记录模板
+## 13. 更新：OV13850 CAM2 冷启动首次 probe 失败（已解决，2026-07-28）
+
+### 13.1 现象
+
+Orange Pi 5 Pro 的 CAM2 已使用正式 BSP 驱动
+`drivers/media/i2c/ov13850.c`，实时设备树节点为 I2C3 的
+`camera@10`，`compatible = "ovti,ov13850"`。冷启动时首次 probe
+持续出现：
+
+```text
+ov13850 3-0010: Unexpected sensor id(000000), ret(-5)
+rkcif-mipi-lvds: rkcif_update_sensor_info: stream[0] get remote terminal sensor failed!
+```
+
+随后 media graph 中没有 OV13850 sensor entity，CIF 继续报
+`update sensor info failed -19`。但系统运行稳定后，手工重新 bind
+`3-0010` 可以识别：
+
+```text
+Detected OV00d850 sensor, REVISION 0xb2
+```
+
+这证明传感器、I2C 地址 `0x10`、reset/PWDN GPIO 与正式驱动本身可用；
+问题仅发生在冷启动时序中。
+
+### 13.2 证据与排除过程
+
+1. 在 `__ov13850_power_on()` 的首次 I2C 访问前增加 `msleep(100)` 后，
+   首次 probe 仍读取到 `000000`。因此不是简单缺少 100 ms 的 reset/PWDN
+   等待时间。
+2. 将芯片 ID 读取连续重试约 2 秒也仍失败。此时启动日志表明
+   `csi2-dcphy0` 的 probe 会等到 sensor probe 返回后才继续，说明在
+   sensor、D-PHY 与媒体端点之间存在启动依赖环；在 sensor probe 内阻塞
+   等待反而会阻塞 D-PHY 初始化。
+3. 以上两种诊断改动均未作为最终修复保留。它们只用于区分“GPIO 极性/
+   电源等待”与“启动依赖顺序”两类假设。
+
+### 13.3 根因
+
+冷启动期间 OV13850 首次读取芯片 ID 时，CSI D-PHY 相关依赖尚未完成。
+原驱动将这次暂时性的 `-ENODEV` 当成永久失败并结束 probe，导致 sensor
+来不及注册到 CIF/ISP 的异步媒体图。
+
+旧的第 9 节结论仅适用于当时的 baseline/overlay 状态；本次实机证据已证明
+当前正式驱动和 `ovti,ov13850` binding 正确，真正的问题是冷启动的 probe
+顺序，而不是 `compatible` 与学习驱动不匹配。
+
+### 13.4 修复方法
+
+只修改正式驱动的 `ov13850_probe()`：首次芯片 ID 检查返回 `-ENODEV` 时，
+清理已开启的时钟/GPIO/供电状态后改为返回 `-EPROBE_DEFER`：
+
+```c
+ret = ov13850_check_sensor_id(ov13850, client);
+if (ret == -ENODEV) {
+	ret = -EPROBE_DEFER;
+	goto err_power_off;
+}
+if (ret)
+	goto err_power_off;
+```
+
+`-EPROBE_DEFER` 会让驱动核心稍后重新调用 probe，而不会在 sensor probe
+内部阻塞 D-PHY 的依赖初始化。`goto err_power_off` 很重要：它保证本轮失败
+probe 不会遗留 xvclk、reset/PWDN 或 regulator 状态。
+
+此策略只针对已经确认存在、但冷启动时暂时未就绪的 CAM2 OV13850；对于实际
+不存在的传感器，不应无条件将所有 `-ENODEV` 长期延后探测。
+
+### 13.5 构建、部署与回滚
+
+- 使用从正常运行板卡导出的 `/proc/config.gz` 和独立 `O=` 输出目录构建。
+- `kernelrelease` 保持为 `6.1.99-opi5pro-livecfg-baseline`；不替换 DTB、
+  overlay、uInitrd 或 Wi-Fi 模块。
+- 修复 Image SHA256：
+
+  ```text
+  a78abf7d933b07e274fb8ad3f83017aede78b926b7d86955bd955eddf9a05c5a
+  ```
+
+- 已知可启动的回滚 Image 保留在：
+
+  ```text
+  /boot/ov13850-backups/id-retry-20260727/Image.before
+  ```
+
+启动分区空间不足以同时长期保留多份额外 Image 时，必须先确认回滚 Image
+的 SHA256，再单独替换 `/boot/Image` 并执行 `sync`。
+
+### 13.6 修复验证
+
+冷启动实机日志：
+
+```text
+[    6.862060] ov13850 3-0010: Unexpected sensor id(000000), ret(-5)
+[    6.926601] ov13850 3-0010: Detected OV00d850 sensor, REVISION 0xb2
+[    6.926617] rockchip-csi2-dphy csi2-dcphy0: dphy0 matches m01_b_ov13850 3-0010
+[    6.929100] rkcif-mipi-lvds: Async subdev notifier completed
+[    6.929262] rkisp1-vir0: Async subdev notifier completed
+```
+
+媒体图已经包含：
+
+```text
+m01_b_ov13850 3-0010 -> rockchip-csi2-dphy0 -> rockchip-mipi-csi2 -> stream_cif_mipi_id0
+```
+
+`/dev/video0` 的格式为 `BG10`、2112x1568。最小采集验证：跳过 3 帧后保存
+1 帧 RAW10，`v4l2-ctl` 返回 0，输出文件大小为 4,415,488 字节；启动、
+Wi-Fi、SSH 和 `bcmdhd` 同时保持正常。
+
+### 13.7 遗留项
+
+设备树仍启用了未连接硬件的 `ov13855-2@36`，因此启动日志仍会有一次
+`ov13855 3-0036: Unexpected sensor id(000000)`。它已不阻塞 OV13850 的媒体
+图或采集，应作为独立的设备树清理任务处理，不要与本修复合并部署。
+
+## 14. 学习驱动晚加载与 CIF dummy buffer size 0（已解决，2026-08-21）
+
+### 14.1 现象
+
+学习模块手工加载后能 probe 并读到 ID `0xd850`、revision `0xb2`，但没有 sensor
+subdev/media entity。改为内建后 media graph 闭合，但首次 STREAMON 返回 ENOMEM，
+输出文件为 0 字节，日志显示 dummy buffer size 为 0。
+
+### 14.2 根因与修复
+
+1. CIF/ISP notifier 在启动约 6.9 秒时完成；模块约 637 秒才 probe，已经错过组图
+   窗口。最终使用 `CONFIG_VIDEO_OV13850_I2C_MIN=y`，使 sensor 在约 6.7 秒注册。
+2. CIF 创建 dummy buffer 时清零 `v4l2_subdev_frame_interval_enum`，仅设置 index/pad，
+   期望 sensor 填回 code/width/height/interval。学习驱动原先拒绝 `code=0`，导致
+   `max_size=0`。最小兼容修复为：
+
+```c
+if (fie->code && fie->code != OV13850_MBUS_CODE)
+	return -EINVAL;
+```
+
+### 14.3 验证结果
+
+- 2112x1568 RAW10：4,415,488 字节，约 29.97 fps。
+- 4224x3136 RAW10：16,859,136 字节，约 7.51 fps。
+- 低分辨率连续 5 次启停、高分辨率持续 60 帧均成功。
+- 流中 ACTIVE 切换返回 `-EBUSY`；曝光、增益、VTS、测试图寄存器值正确。
+- 停流后 PM 为 `suspended`、usage 0；无新增 CRC/ECC/timeout/overflow。
+- `v4l2-compliance` 42/43，唯一失败为正式参考驱动也未实现的 control event 订阅。
+
+### 14.4 Image、空间与回滚
+
+当前 `/boot/Image` SHA256：
+
+```text
+e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19
+```
+
+旧 Image 回滚副本：
+
+```text
+/home/orangepi/boot-backups/Image.before-stage2-builtin-20260821_162915
+```
+
+`/boot` 空间不足以保存额外完整 Image；应先备份到根分区并用 `sha256sum`/`cmp`
+校验，再单独替换 `/boot/Image`。
+
+### 14.5 结论边界
+
+未连接的 `ov13855-2@36` 日志与启动早期短暂的 `get remote sensor_sd failed` 不影响
+后续采集，均不应与本次修复混合处理。
+
+## 15. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

@@ -634,7 +634,59 @@ Wi-Fi、SSH 和 `bcmdhd` 同时保持正常。
 `ov13855 3-0036: Unexpected sensor id(000000)`。它已不阻塞 OV13850 的媒体
 图或采集，应作为独立的设备树清理任务处理，不要与本修复合并部署。
 
-## 14. 新问题记录模板
+## 14. 学习驱动晚加载与 CIF dummy buffer size 0（已解决，2026-08-21）
+
+### 14.1 现象
+
+学习模块手工加载后能 probe 并读到 ID `0xd850`、revision `0xb2`，但没有 sensor
+subdev/media entity。改为内建后 media graph 闭合，但首次 STREAMON 返回 ENOMEM，
+输出文件为 0 字节，日志显示 dummy buffer size 为 0。
+
+### 14.2 根因与修复
+
+1. CIF/ISP notifier 在启动约 6.9 秒时完成；模块约 637 秒才 probe，已经错过组图
+   窗口。最终使用 `CONFIG_VIDEO_OV13850_I2C_MIN=y`，使 sensor 在约 6.7 秒注册。
+2. CIF 创建 dummy buffer 时清零 `v4l2_subdev_frame_interval_enum`，仅设置 index/pad，
+   期望 sensor 填回 code/width/height/interval。学习驱动原先拒绝 `code=0`，导致
+   `max_size=0`。最小兼容修复为：
+
+```c
+if (fie->code && fie->code != OV13850_MBUS_CODE)
+	return -EINVAL;
+```
+
+### 14.3 验证结果
+
+- 2112x1568 RAW10：4,415,488 字节，约 29.97 fps。
+- 4224x3136 RAW10：16,859,136 字节，约 7.51 fps。
+- 低分辨率连续 5 次启停、高分辨率持续 60 帧均成功。
+- 流中 ACTIVE 切换返回 `-EBUSY`；曝光、增益、VTS、测试图寄存器值正确。
+- 停流后 PM 为 `suspended`、usage 0；无新增 CRC/ECC/timeout/overflow。
+- `v4l2-compliance` 42/43，唯一失败为正式参考驱动也未实现的 control event 订阅。
+
+### 14.4 Image、空间与回滚
+
+当前 `/boot/Image` SHA256：
+
+```text
+e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19
+```
+
+旧 Image 回滚副本：
+
+```text
+/home/orangepi/boot-backups/Image.before-stage2-builtin-20260821_162915
+```
+
+`/boot` 空间不足以保存额外完整 Image；应先备份到根分区并用 `sha256sum`/`cmp`
+校验，再单独替换 `/boot/Image`。
+
+### 14.5 结论边界
+
+未连接的 `ov13855-2@36` 日志与启动早期短暂的 `get remote sensor_sd failed` 不影响
+后续采集，均不应与本次修复混合处理。
+
+## 15. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

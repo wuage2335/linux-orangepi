@@ -1,5 +1,24 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-21
+
+- 完成 `ov13850_i2c_min.c` 阶段 2：controls、runtime PM、两模式 TRY/ACTIVE、
+  stream lifecycle、probe/remove 清理和隔离 binding。
+- 模块装卸和 alias 验证通过，但实机证明晚加载会错过 Rockchip CIF/ISP async
+  notifier；最终使用 `CONFIG_VIDEO_OV13850_I2C_MIN=y`。
+- 当前学习 binding 为 `learning,ov13850-i2c`，实机 SSH 为 `192.168.1.10`，
+  media graph 已包含 sensor -> D-PHY -> CSI2 -> CIF。
+- STREAMON 的 ENOMEM 根因是 `enum_frame_interval()` 拒绝 CIF 的 `code=0`，使
+  dummy buffer size 为 0；改为仅在 code 非零时校验后，同一测试转为成功。
+- 2112x1568 RAW10 单帧 4,415,488 字节、29.97 fps；4224x3136 RAW10 单帧
+  16,859,136 字节、7.51 fps。低分辨率连续 5 次启停和高分辨率持续 60 帧成功。
+- TRY/ACTIVE、流中 `-EBUSY`、controls 范围及曝光/增益/VTS/测试图寄存器写入
+  均通过；停流后 PM 为 suspended、usage 0，无新增 CRC/ECC/timeout/overflow。
+- `v4l2-compliance` 为 42/43；control event 订阅是唯一非阻塞遗留项。
+- 当前 Image SHA256 为
+  `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`；旧 Image
+  回滚副本为 `/home/orangepi/boot-backups/Image.before-stage2-builtin-20260821_162915`。
+
 ## 2026-08-06
 
 - 将阶段 2 的学习驱动设计和实施计划存入仓库：`docs/superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md` 与 `docs/superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md`。

@@ -22,7 +22,7 @@
 
 - [x] 阶段 0：基线验证
 - [x] 阶段 1：传感器与 DTS
-- [ ] 阶段 2：V4L2 驱动完善（当前阶段）
+- [x] 阶段 2：V4L2 驱动完善
 - [ ] 阶段 3：ISP 与 RGA 图像处理
 - [ ] 阶段 4：MPP 硬件编码
 - [ ] 阶段 5：低延迟视频流
@@ -49,7 +49,7 @@
 - 能定位 `compatible -> of_device_id -> probe` 的驱动匹配过程。
 - 能根据启动日志判断电源、时钟、I2C、MIPI 或 endpoint 配置问题。
 
-## 阶段 2：V4L2 驱动完善（当前阶段）
+## 阶段 2：V4L2 驱动完善（已完成）
 
 目标：以正式 `ov13850.c` 为主线，理解并验证一个完整 V4L2 sensor subdev 驱动。
 
@@ -65,16 +65,18 @@
 
 阶段 2 学习子步骤：
 
-- [ ] 2A：建立 `ov13850_i2c_min.c` 的隔离 binding、V4L2 control/PM 状态与可重复模块基线。当前已写入部分静态脚手架，但尚未构建。
-- [ ] 2B：实现最小 `s_stream`，让媒体管线负责 global init、mode init、stream on/off。
-- [ ] 2C：加入 V4L2 Controls，先完成 link frequency、pixel rate、HBLANK、VBLANK、曝光、模拟增益和测试图。
-- [ ] 2D：加入 runtime PM，并处理 stream、sysfs 调试与电源状态之间的关系。
-- [ ] 2E：完善 TRY/ACTIVE 格式协商、frame interval、endpoint 校验和第二个模式。
-- [ ] 2F：执行 `v4l2-compliance`、连续启停、持续采集及 MIPI 错误检查。
+- [x] 2A：隔离 binding、V4L2 control/PM 状态与同一 `O=` 构建基线。
+- [x] 2B：实现 global init -> mode -> controls -> stream on/off。
+- [x] 2C：实现 link frequency、pixel rate、HBLANK、VBLANK、曝光、模拟增益和测试图。
+- [x] 2D：实现 runtime PM，并覆盖 stream 与 sysfs 调试访问。
+- [x] 2E：实现 TRY/ACTIVE、两个 RAW10 模式、frame interval 与 endpoint 配置。
+- [x] 2F：完成内建启动、双模式采集、重复启停、持续帧率和日志检查。
 
-当前执行约定（2026-08-06）：用户要求先完成学习驱动阶段 2 的编写，再进行一次统一构建和上机验证。因此 2A-2F 都不得在没有证据时标记完成；正式 `ov13850.c` 只读对照，实际练习改动集中在 `ov13850_i2c_min.c`。
+阶段 2 验收记录（2026-08-21）：2112x1568 为 29.97 fps，4224x3136 为
+7.51 fps；两种 RAW10 模式均成功采帧。`v4l2-compliance` 42/43，唯一遗留为
+control event 订阅。详细证据见 `HANDOFF.md`、`progress.md` 和问题记录。
 
-## 阶段 3：ISP 与 RGA 图像处理
+## 阶段 3：ISP 与 RGA 图像处理（当前阶段）
 
 目标：理解 RAW 数据经过 RKISP 后生成 NV12/YUV 的过程，并按需使用 RGA 完成缩放、旋转或色彩转换。
 
