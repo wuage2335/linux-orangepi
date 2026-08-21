@@ -553,6 +553,49 @@ static const struct ov13850_regval ov13850_global_regs_r2a[] = {
 };
 
 
+/*
+ * Xclk 24Mhz
+ * max_framerate 7fps
+ * mipi_datarate per lane 600Mbps
+ */
+static const struct ov13850_regval  ov13850_4224x3136_regs[] = {
+	{0x3612, 0x2f},
+	{0x370a, 0x24},
+	{0x372a, 0x04},
+	{0x372f, 0xa0},
+	{0x3801, 0x0C},
+	{0x3805, 0x93},
+	{0x3807, 0x4B},
+	{0x3808, 0x10},
+	{0x3809, 0x80},
+	{0x380a, 0x0c},
+	{0x380b, 0x40},
+	{0x380e, 0x0d},
+	{0x380f, 0x00},
+	{0x3813, 0x04},
+	{0x3814, 0x11},
+	{0x3815, 0x11},
+	{0x3820, 0x00},
+	{0x3821, 0x04},
+	{0x3836, 0x04},
+	{0x3837, 0x01},
+	{0x4601, 0x87},
+	{0x4603, 0x01},
+	{0x4020, 0x02},
+	{0x4021, 0x4C},
+	{0x4022, 0x0E},
+	{0x4023, 0x37},
+	{0x4024, 0x0F},
+	{0x4025, 0x1C},
+	{0x4026, 0x0F},
+	{0x4027, 0x1F},
+	{0x4603, 0x00},
+	{0x5401, 0x71},
+	{0x5405, 0x80},
+	{OV13850_REG_END, 0x00},
+};
+
+
 static const struct ov13850_regval ov13850_safe_stop_regs[] = {
 	{ 0x0100, 0x00 },
 	{ OV13850_REG_DELAY, 5 },
@@ -639,6 +682,26 @@ static const struct ov13850_mode ov13850_2112x1568_mode = {
 	.reg_list = ov13850_2112x1568_regs,
 };
 
+static const struct ov13850_mode ov13850_4224x3136_mode = {
+    .name = "4224x3136_7_5fps_mode_only",
+    .width = 4224,
+    .height = 3136,
+    .max_fps = {
+        .numerator = 10000,
+        .denominator = 75000,
+    },
+    .hts_def = 0x12c0,
+    .vts_def = 0x0d00,
+    .exp_def = 0x0600,
+    .link_freq_idx = 0,
+    .pixel_rate = OV13850_PIXEL_RATE,
+    .reg_list = ov13850_4224x3136_regs,
+};
+
+static const struct ov13850_mode * const ov13850_min_supported_modes[] = {
+    &ov13850_2112x1568_mode,
+    &ov13850_4224x3136_mode,
+};
 
 static int ov13850_min_read_reg(struct i2c_client *client, u16 reg, 
                                 unsigned int len, u32 *val)
@@ -657,7 +720,7 @@ static int ov13850_min_read_reg(struct i2c_client *client, u16 reg,
     msgs[0].len = 2;
     msgs[0].buf = (u8 *)&reg_be;
 
-    
+
 	msgs[1].addr = client->addr;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].len = len;
@@ -689,6 +752,36 @@ static int ov13850_min_write_reg(struct i2c_client *client, u16 reg, u8 val)
 		return ret < 0 ? ret : -EIO;
 
 	return 0;
+}
+static int ov13850_min_write_reg16(struct i2c_client *client,
+				   u16 reg, u16 val)
+{
+	int ret;
+
+	ret = ov13850_min_write_reg(client, reg, val >> 8);
+	if (ret)
+		return ret;
+
+	return ov13850_min_write_reg(client, reg + 1, val & 0xff);
+}
+
+static int ov13850_min_write_reg24(struct i2c_client *client,
+				   u16 reg, u32 val)
+{
+	int ret;
+
+	if (val > 0xffffff)
+		return -EINVAL;
+
+	ret = ov13850_min_write_reg(client, reg, (val >> 16) & 0xff);
+	if (ret)
+		return ret;
+
+	ret = ov13850_min_write_reg(client, reg + 1, (val >> 8) & 0xff);
+	if (ret)
+		return ret;
+
+	return ov13850_min_write_reg(client, reg + 2, val & 0xff);
 }
 
 static int ov13850_min_write_array(struct i2c_client *client,
@@ -914,20 +1007,50 @@ static void ov13850_min_power_off(struct ov13850_min *cam)
 	cam->powered = false;
 }
 
+static int ov13850_min_runtime_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
 
+	return ov13850_min_power_on(cam);
+}
+
+static int ov13850_min_runtime_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct ov13850_min *cam = ov13850_min_from_client(client);
+
+	ov13850_min_power_off(cam);
+
+	return 0;
+}
+
+static const struct dev_pm_ops ov13850_min_pm_ops = {
+	SET_RUNTIME_PM_OPS(ov13850_min_runtime_suspend,
+			   ov13850_min_runtime_resume, NULL)
+};
 static int ov13850_min_start_streaming(struct ov13850_min *cam)
 {
 	int ret;
 
-	ret = ov13850_min_power_on(cam);
+	ret = ov13850_min_apply_global_init(cam);
 	if (ret)
 		return ret;
 
-	ret = ov13850_min_apply_full_init(cam);
+	ret = ov13850_min_apply_mode(cam);
 	if (ret)
 		return ret;
 
-	// 0x0100 = 0x01：开始输出 MIPI CSI-2 数据
+	/*
+	 * ctrl_handler 使用 cam->lock；s_stream() 已持有该锁。
+	 * 必须先解锁，否则 handler_setup() 会再次申请同一把锁而死锁。
+	 */
+	mutex_unlock(&cam->lock);
+	ret = v4l2_ctrl_handler_setup(&cam->ctrl_handler);
+	mutex_lock(&cam->lock);
+	if (ret)
+		return ret;
+
 	ret = ov13850_min_write_reg(cam->client, 0x0100, 0x01);
 	if (ret) {
 		dev_err(&cam->client->dev,
@@ -969,13 +1092,27 @@ static int ov13850_min_s_stream(struct v4l2_subdev *sd, int on)
 	if (on == cam->streaming)
 		goto unlock;
 
-	if (on)
-		ret = ov13850_min_start_streaming(cam);
-	else
-		ret = ov13850_min_stop_streaming(cam);
+	if (on) {
+		ret = pm_runtime_get_sync(&cam->client->dev);
+		if (ret < 0) {
+			pm_runtime_put_noidle(&cam->client->dev);
+			goto unlock;
+		}
 
-	if (!ret)
-		cam->streaming = on;
+		ret = ov13850_min_start_streaming(cam);
+		if (ret) {
+			pm_runtime_put(&cam->client->dev);
+			goto unlock;
+		}
+	} else {
+		ret = ov13850_min_stop_streaming(cam);
+		if (ret)
+			goto unlock;
+
+		pm_runtime_put(&cam->client->dev);
+	}
+
+	cam->streaming = on;
 
 unlock:
 	mutex_unlock(&cam->lock);
@@ -983,9 +1120,165 @@ unlock:
 	return ret;
 }
 
+static int ov13850_min_set_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct ov13850_min *cam =
+		container_of(ctrl->handler, struct ov13850_min,
+			     ctrl_handler);
+	struct i2c_client *client = cam->client;
+	s64 exposure_max;
+	u8 test_pattern;
+	int ret = 0;
+
+	switch (ctrl->id) {
+	case V4L2_CID_VBLANK:
+		exposure_max = cam->cur_mode->height + ctrl->val - 16;
+		__v4l2_ctrl_modify_range(cam->exposure,
+					 cam->exposure->minimum,
+					 exposure_max,
+					 cam->exposure->step,
+					 cam->exposure->default_value);
+		break;
+	}
+
+	if (!pm_runtime_get_if_in_use(&client->dev))
+		return 0;
+
+	switch (ctrl->id) {
+	case V4L2_CID_EXPOSURE:
+		ret = ov13850_min_write_reg24(client,
+					       OV13850_REG_EXPOSURE,
+					       ctrl->val << 4);
+		break;
+
+	case V4L2_CID_ANALOGUE_GAIN:
+		ret = ov13850_min_write_reg(client, OV13850_REG_GAIN_H,
+					     (ctrl->val >> OV13850_GAIN_H_SHIFT) &
+					     OV13850_GAIN_H_MASK);
+		if (ret)
+			break;
+
+		ret = ov13850_min_write_reg(client, OV13850_REG_GAIN_L,
+					     ctrl->val & OV13850_GAIN_L_MASK);
+		break;
+
+	case V4L2_CID_VBLANK:
+		ret = ov13850_min_write_reg16(client, OV13850_REG_VTS,
+					       cam->cur_mode->height + ctrl->val);
+		break;
+
+	case V4L2_CID_TEST_PATTERN:
+		if (ctrl->val)
+			test_pattern = OV13850_TEST_PATTERN_ENABLE |
+				       (ctrl->val - 1);
+		else
+			test_pattern = OV13850_TEST_PATTERN_DISABLE;
+
+		ret = ov13850_min_write_reg(client,
+					     OV13850_REG_TEST_PATTERN,
+					     test_pattern);
+		break;
+
+	default:
+		dev_warn(&client->dev, "unhandled control 0x%x\n", ctrl->id);
+		break;
+	}
+
+	pm_runtime_put(&client->dev);
+
+	return ret;
+}
+
+static const struct v4l2_ctrl_ops ov13850_min_ctrl_ops = {
+	.s_ctrl = ov13850_min_set_ctrl,
+};
+
+static int ov13850_min_init_controls(struct ov13850_min *cam)
+{
+	struct v4l2_ctrl_handler *handler = &cam->ctrl_handler;
+	const struct ov13850_mode *mode = cam->cur_mode;
+	struct v4l2_ctrl *link_freq;
+	s64 vblank_def;
+	s64 exposure_max;
+	u32 hblank;
+	int ret;
+
+	ret = v4l2_ctrl_handler_init(handler, 7);
+	if (ret)
+		return ret;
+
+	handler->lock = &cam->lock;
+
+	link_freq = v4l2_ctrl_new_int_menu(handler, NULL,
+					   V4L2_CID_LINK_FREQ,
+					   ARRAY_SIZE(ov13850_link_freq_menu_items) - 1,
+					   mode->link_freq_idx,
+					   ov13850_link_freq_menu_items);
+	if (link_freq)
+		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	v4l2_ctrl_new_std(handler, NULL, V4L2_CID_PIXEL_RATE,
+			  OV13850_PIXEL_RATE, OV13850_PIXEL_RATE,
+			  1, OV13850_PIXEL_RATE);
+
+	hblank = mode->hts_def - mode->width;
+	cam->hblank = v4l2_ctrl_new_std(handler, NULL, V4L2_CID_HBLANK,
+					hblank, hblank, 1, hblank);
+	if (cam->hblank)
+		cam->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	vblank_def = mode->vts_def - mode->height;
+	cam->vblank = v4l2_ctrl_new_std(handler, &ov13850_min_ctrl_ops,
+					V4L2_CID_VBLANK,
+					vblank_def,
+					OV13850_VTS_MAX - mode->height,
+					1, vblank_def);
+
+	exposure_max = mode->vts_def - 16;
+	cam->exposure = v4l2_ctrl_new_std(handler, &ov13850_min_ctrl_ops,
+					  V4L2_CID_EXPOSURE,
+					  OV13850_EXPOSURE_MIN,
+					  exposure_max,
+					  OV13850_EXPOSURE_STEP,
+					  mode->exp_def);
+
+	cam->anal_gain = v4l2_ctrl_new_std(handler, &ov13850_min_ctrl_ops,
+					   V4L2_CID_ANALOGUE_GAIN,
+					   OV13850_GAIN_MIN,
+					   OV13850_GAIN_MAX,
+					   OV13850_GAIN_STEP,
+					   OV13850_GAIN_DEFAULT);
+
+	cam->test_pattern =
+		v4l2_ctrl_new_std_menu_items(handler, &ov13850_min_ctrl_ops,
+					     V4L2_CID_TEST_PATTERN,
+					     ARRAY_SIZE(ov13850_test_pattern_menu) - 1,
+					     0, 0,
+					     ov13850_test_pattern_menu);
+
+	if (handler->error) {
+		ret = handler->error;
+		v4l2_ctrl_handler_free(handler);
+		return ret;
+	}
+
+	cam->sd.ctrl_handler = handler;
+
+	return 0;
+}
+
 
 /// SYSFS PART START  ///
 
+static int ov13850_min_debug_pm_get(struct ov13850_min *cam)
+{
+	return pm_runtime_resume_and_get(&cam->client->dev);
+}
+
+static void ov13850_min_debug_pm_put(struct ov13850_min *cam)
+{
+	pm_runtime_put(&cam->client->dev);
+}
 static ssize_t chip_id_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
@@ -995,9 +1288,15 @@ static ssize_t chip_id_show(struct device *dev,
 	u32 val = 0;
 	int ret;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
 	ret = ov13850_min_read_reg(client, OV13850_CHIP_ID_REG, 2, &val);
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1016,9 +1315,15 @@ static ssize_t revision_show(struct device *dev,
 	u32 val = 0;
 	int ret;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
 	ret = ov13850_min_read_reg(client, OV13850_REVISION_REG, 1, &val);
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1080,10 +1385,16 @@ static ssize_t reg_value_show(struct device *dev,
 	u32 val = 0;
 	int ret;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
 	reg = cam->current_reg;
 	ret = ov13850_min_read_reg(client, reg, 1, &val);
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1109,10 +1420,22 @@ static ssize_t reg_value_store(struct device *dev,
 	if (val > 0xff)
 		return -EINVAL;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
-	reg = cam->current_reg;
-	ret = ov13850_min_write_reg(client, reg, val);
+
+	if (cam->streaming) {
+		ret = -EBUSY;
+	} else {
+		reg = cam->current_reg;
+		ret = ov13850_min_write_reg(client, reg, val);
+	}
+
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1141,9 +1464,20 @@ static ssize_t array_test_store(struct device *dev,
 	if (trigger != 1)
 		return -EINVAL;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
-	ret = ov13850_min_write_array(client, ov13850_safe_stop_regs);
+
+	if (cam->streaming)
+		ret = -EBUSY;
+	else
+		ret =  ov13850_min_write_array(client, ov13850_safe_stop_regs);
+
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1199,9 +1533,20 @@ static ssize_t mode_apply_store(struct device *dev,
 	if (trigger != 1)
 		return -EINVAL;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
-	ret = ov13850_min_apply_mode(cam);
+
+	if (cam->streaming)
+		ret = -EBUSY;
+	else
+		ret = ov13850_min_apply_mode(cam);
+
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1228,9 +1573,20 @@ static ssize_t full_init_store(struct device *dev,
 	if (trigger != 1)
 		return -EINVAL;
 
+	ret = ov13850_min_debug_pm_get(cam);
+	if (ret < 0)
+		return ret;
+
 	mutex_lock(&cam->lock);
-	ret = ov13850_min_apply_full_init(cam);
+
+	if (cam->streaming)
+		ret = -EBUSY;
+	else
+		ret = ov13850_min_apply_full_init(cam);
+
 	mutex_unlock(&cam->lock);
+
+	ov13850_min_debug_pm_put(cam);
 
 	if (ret)
 		return ret;
@@ -1278,17 +1634,18 @@ static int ov13850_enum_frame_size(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_state *state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
-	struct ov13850_min *cam = to_ov13850_min(sd);
-	const struct ov13850_mode *mode = cam->cur_mode;
+	const struct ov13850_mode *mode;
 
 	if (fse->pad != OV13850_PAD_SOURCE)
 		return -EINVAL;
 
-	if (fse->index > 0)
+	if (fse->index >= ARRAY_SIZE(ov13850_min_supported_modes))
 		return -EINVAL;
 
 	if (fse->code != OV13850_MBUS_CODE)
 		return -EINVAL;
+
+	mode = ov13850_min_supported_modes[fse->index];
 
 	fse->min_width = mode->width;
 	fse->max_width = mode->width;
@@ -1299,42 +1656,86 @@ static int ov13850_enum_frame_size(struct v4l2_subdev *sd,
 }
 
 static int ov13850_enum_frame_interval(
-				struct v4l2_subdev *sd,
-				struct v4l2_subdev_state *state,
-				struct v4l2_subdev_frame_interval_enum *fie)
+                struct v4l2_subdev *sd,
+                struct v4l2_subdev_state *state,
+                struct v4l2_subdev_frame_interval_enum *fie)
 {
-	struct ov13850_min *cam = to_ov13850_min(sd);
-	const struct ov13850_mode *mode = cam->cur_mode;
+    const struct ov13850_mode *mode;
 
-	if (fie->pad != OV13850_PAD_SOURCE)
-		return -EINVAL;
+    if (fie->pad != OV13850_PAD_SOURCE)
+        return -EINVAL;
 
-	if (fie->index > 0)
-		return -EINVAL;
+    if (fie->index >= ARRAY_SIZE(ov13850_min_supported_modes))
+        return -EINVAL;
 
-	fie->code = OV13850_MBUS_CODE;
-	fie->width = mode->width;
-	fie->height = mode->height;
-	fie->interval = mode->max_fps;
+    if (fie->code && fie->code != OV13850_MBUS_CODE)
+        return -EINVAL;
 
-	return 0;
+    mode = ov13850_min_supported_modes[fie->index];
+
+    fie->code = OV13850_MBUS_CODE;
+    fie->width = mode->width;
+    fie->height = mode->height;
+    fie->interval = mode->max_fps;
+
+    return 0;
 }
 
-// 目前是不论set什么， 固定返回 2112x1568 RAW10
+
+static int ov13850_min_get_reso_dist(const struct ov13850_mode *mode,
+                                     struct v4l2_mbus_framefmt *framefmt)
+{
+    return abs(mode->width - framefmt->width) +
+           abs(mode->height - framefmt->height);
+}
+
+static const struct ov13850_mode *
+ov13850_min_find_best_fit(struct v4l2_subdev_format *fmt)
+{
+    struct v4l2_mbus_framefmt *framefmt = &fmt->format;
+    const struct ov13850_mode *mode;
+    const struct ov13850_mode *best_mode;
+    int best_dist = -1;
+    int dist;
+    unsigned int i;
+
+    for (i = 0; i < ARRAY_SIZE(ov13850_min_supported_modes); i++) {
+        mode = ov13850_min_supported_modes[i];
+        dist = ov13850_min_get_reso_dist(mode, framefmt);
+
+        if (best_dist == -1 || dist < best_dist) {
+            best_dist = dist;
+            best_mode = ov13850_min_supported_modes[i];
+        }
+    }
+
+    return best_mode;
+}
+
+
 static int ov13850_get_fmt(struct v4l2_subdev *sd,
 			   struct v4l2_subdev_state *state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov13850_min *cam = to_ov13850_min(sd);
-
+	int ret = 0;
 	if (fmt->pad != OV13850_PAD_SOURCE)
 		return -EINVAL;
 
 	mutex_lock(&cam->lock);
-	fmt->format = cam->fmt;
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+	#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+		fmt->format =
+			*v4l2_subdev_get_try_format(sd, state, fmt->pad);
+	#else
+		ret = -ENOTTY;
+	#endif
+	} else {
+		fmt->format = cam->fmt;
+	}
 	mutex_unlock(&cam->lock);
 
-	return 0;
+	return ret;
 }
 
 static int ov13850_set_fmt(struct v4l2_subdev *sd,
@@ -1342,12 +1743,42 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov13850_min *cam = to_ov13850_min(sd);
-	const struct ov13850_mode *mode = cam->cur_mode;
+	const struct ov13850_mode *mode;
+	s64 exposure_max;
+	s64 vblank_def;
+	u32 hblank;
+	int ret = 0;
 
 	if (fmt->pad != OV13850_PAD_SOURCE)
 		return -EINVAL;
 
 	mutex_lock(&cam->lock);
+
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+		mode = ov13850_min_find_best_fit(fmt);
+
+		fmt->format.code = OV13850_MBUS_CODE;
+		fmt->format.width = mode->width;
+		fmt->format.height = mode->height;
+		fmt->format.field = V4L2_FIELD_NONE;
+		fmt->format.colorspace = V4L2_COLORSPACE_RAW;
+
+#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+		*v4l2_subdev_get_try_format(sd, state, fmt->pad) = fmt->format;
+#else
+		ret = -ENOTTY;
+#endif
+
+		mutex_unlock(&cam->lock);
+		return ret;
+	}
+
+	if (cam->streaming) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+
+	mode = ov13850_min_find_best_fit(fmt);
 
 	fmt->format.code = OV13850_MBUS_CODE;
 	fmt->format.width = mode->width;
@@ -1355,11 +1786,30 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	fmt->format.colorspace = V4L2_COLORSPACE_RAW;
 
+	cam->cur_mode = mode;
 	cam->fmt = fmt->format;
 
+	hblank = mode->hts_def - mode->width;
+	__v4l2_ctrl_modify_range(cam->hblank,
+				hblank, hblank, 1, hblank);
+
+	vblank_def = mode->vts_def - mode->height;
+	__v4l2_ctrl_modify_range(cam->vblank,
+				vblank_def,
+				OV13850_VTS_MAX - mode->height,
+				1, vblank_def);
+
+	exposure_max = mode->vts_def - 16;
+	__v4l2_ctrl_modify_range(cam->exposure,
+				OV13850_EXPOSURE_MIN,
+				exposure_max,
+				OV13850_EXPOSURE_STEP,
+				mode->exp_def);
+
+unlock:
 	mutex_unlock(&cam->lock);
 
-	return 0;
+	return ret;
 }
 
 static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
@@ -1369,6 +1819,7 @@ static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_
 		return -EINVAL;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
+	config->bus.mipi_csi2.flags = 0;
 	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
 
 	return 0;
@@ -1407,6 +1858,36 @@ static const struct v4l2_subdev_ops ov13850_subdev_ops = {
 	.pad = &ov13850_pad_ops,
 };
 
+#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+static int ov13850_min_open(struct v4l2_subdev *sd,
+			    struct v4l2_subdev_fh *fh)
+{
+	struct ov13850_min *cam = to_ov13850_min(sd);
+	const struct ov13850_mode *mode =
+		ov13850_min_supported_modes[0];
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_get_try_format(sd, fh->state,
+					   OV13850_PAD_SOURCE);
+
+	mutex_lock(&cam->lock);
+
+	try_fmt->width = mode->width;
+	try_fmt->height = mode->height;
+	try_fmt->code = OV13850_MBUS_CODE;
+	try_fmt->field = V4L2_FIELD_NONE;
+	try_fmt->colorspace = V4L2_COLORSPACE_RAW;
+
+	mutex_unlock(&cam->lock);
+
+	return 0;
+}
+
+static const struct v4l2_subdev_internal_ops
+ov13850_min_internal_ops = {
+	.open = ov13850_min_open,
+};
+#endif
+
 static int ov13850_min_probe(struct i2c_client *client,
 			     const struct i2c_device_id *id)
 {
@@ -1431,15 +1912,13 @@ static int ov13850_min_probe(struct i2c_client *client,
 	cam->client = client;
 	cam->current_reg = OV13850_CHIP_ID_REG;
 
-	cam->cur_mode = &ov13850_2112x1568_mode;
+	cam->cur_mode = ov13850_min_supported_modes[0];
 	// 初始化目前FMT
 	cam->fmt.code = OV13850_MBUS_CODE;
 	cam->fmt.width = cam->cur_mode->width;
 	cam->fmt.height = cam->cur_mode->height;
 	cam->fmt.field = V4L2_FIELD_NONE;
 	cam->fmt.colorspace = V4L2_COLORSPACE_RAW;
-
-	mutex_init(&cam->lock);
 
     // 获取外部时钟资源
 	cam->xvclk = devm_clk_get(dev, "xvclk");
@@ -1460,14 +1939,17 @@ static int ov13850_min_probe(struct i2c_client *client,
     // 绑定电源名称和电源结构体
 	for (i = 0; i < OV13850_NUM_SUPPLIES; i++)
 		cam->supplies[i].supply = ov13850_supply_names[i];
+
 	ret = devm_regulator_bulk_get(dev, OV13850_NUM_SUPPLIES, cam->supplies);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to get regulators\n");
 
+	mutex_init(&cam->lock);
+
     // 上电摄像头模块
 	ret = ov13850_min_power_on(cam);
 	if (ret)
-		return ret;
+		goto err_destroy_mutex;
 
     // 读取芯片ID寄存器的值，并与预期的芯片ID进行比较
 	ret = ov13850_min_read_reg(client, OV13850_CHIP_ID_REG, 2, &chip_id);
@@ -1500,6 +1982,16 @@ static int ov13850_min_probe(struct i2c_client *client,
 	// 这里就会覆盖掉前面的指针, 因此后面get_clientdata只会是返回 sd 这个结构体变量的指针
 	v4l2_i2c_subdev_init(&cam->sd, client, &ov13850_subdev_ops);
 
+	ret = ov13850_min_init_controls(cam);
+	if (ret) {
+		dev_err(dev, "failed to initialize controls: %d\n", ret);
+		goto err_power_off;
+	}
+
+#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+	cam->sd.internal_ops = &ov13850_min_internal_ops;
+#endif
+
 	cam->sd.owner = THIS_MODULE;
 	cam->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	cam->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
@@ -1509,7 +2001,7 @@ static int ov13850_min_probe(struct i2c_client *client,
 	ret = media_entity_pads_init(&cam->sd.entity, OV13850_NUM_PADS, &cam->pad);
 	if (ret) {
 		dev_err(dev, "failed to init media entity pads: %d\n", ret);
-		goto err_power_off;
+		goto err_free_handler;
 	}
 	
 	ret = v4l2_async_register_subdev_sensor(&cam->sd);
@@ -1528,6 +2020,10 @@ static int ov13850_min_probe(struct i2c_client *client,
 	}
 	dev_info(dev, "sysfs ready: chip_id revision reg_addr reg_value array_test mode_info mode_apply full_init\n");
 
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+	pm_runtime_idle(dev);
+
 	return 0;
 
 // 错误处理，清理资源的goto需要跟上面函数的调用顺序相反， 保证所有资源都能被正确释放
@@ -1538,8 +2034,14 @@ err_unregister_subdev:
 err_cleanup_entity:
 	media_entity_cleanup(&cam->sd.entity);
 
+err_free_handler:
+	v4l2_ctrl_handler_free(&cam->ctrl_handler);
+
 err_power_off:
 	ov13850_min_power_off(cam);
+
+err_destroy_mutex:
+	mutex_destroy(&cam->lock);
 
 	return ret;
 }
@@ -1552,8 +2054,14 @@ static void ov13850_min_remove(struct i2c_client *client)
 	sysfs_remove_group(&client->dev.kobj, &ov13850_min_attr_group);
 	v4l2_async_unregister_subdev(&cam->sd);
 	media_entity_cleanup(&cam->sd.entity);
+	v4l2_ctrl_handler_free(&cam->ctrl_handler);
 
-    ov13850_min_power_off(cam);
+	pm_runtime_disable(&client->dev);
+	if (!pm_runtime_status_suspended(&client->dev))
+		ov13850_min_power_off(cam);
+
+	pm_runtime_set_suspended(&client->dev);
+	mutex_destroy(&cam->lock);
 
 	dev_info(&client->dev, "removed\n");
 }
@@ -1576,6 +2084,7 @@ static struct i2c_driver ov13850_min_driver = {
 	.driver = {
 		.name = "ov13850_i2c_min",
 		.of_match_table = ov13850_min_of_match,
+		.pm = &ov13850_min_pm_ops,
 	},
 	.probe = ov13850_min_probe,
 	.remove = ov13850_min_remove,
