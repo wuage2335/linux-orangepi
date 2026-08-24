@@ -9,8 +9,33 @@
 
 #include "im2d.hpp"
 
+/*
+ * 阶段 3 的最小 RGA 业务闭环：
+ *
+ *   RKISP 已采集的 1920x1080 NV12 文件
+ *                  |
+ *                  v
+ *       读入进程虚拟内存（src_data）
+ *                  |
+ *                  v
+ *   importbuffer_virtualaddr + wrapbuffer_handle
+ *                  |
+ *                  v
+ *          RGA imresize（同步执行）
+ *                  |
+ *                  v
+ *       1280x720 NV12 内存（dst_data）-> 输出文件
+ *
+ * 这个程序故意不接 V4L2 实时队列和 DMA-BUF。先把文件尺寸、NV12 内存布局、
+ * librga/内核驱动兼容性和纯缩放耗时隔离验证，后续实时链路可以复用相同的
+ * RGA buffer 描述和错误处理。
+ */
 namespace {
 
+/*
+ * 第一版固定输入输出，避免“任意尺寸/任意格式”掩盖硬件接口问题。NV12 由
+ * 全分辨率 Y 平面和半尺寸交错 UV 平面组成，总字节数为 width*height*3/2。
+ */
 constexpr int kSrcWidth = 1920;
 constexpr int kSrcHeight = 1080;
 constexpr int kDstWidth = 1280;
@@ -32,6 +57,11 @@ static_assert(kSrcHeight % 2 == 0);
 static_assert(kDstWidth % 2 == 0);
 static_assert(kDstHeight % 2 == 0);
 
+/*
+ * 普通 vector 内存先导入 librga，得到可提交给 RGA 驱动的 handle。该类只
+ * 表达 handle 的所有权：构造时导入，析构时释放，禁止复制以避免 double
+ * release。src/dst 各导入一次，5+100 次缩放复用同一个 handle。
+ */
 class ImportedBuffer {
 public:
 	ImportedBuffer(void *address, std::size_t size)
@@ -66,6 +96,10 @@ private:
 bool read_exact_frame(const char *path,
 		      std::vector<unsigned char> &buffer)
 {
+	/*
+	 * ios::ate 先定位文件末尾取得大小。文件必须恰好是一帧，不接受短帧、
+	 * 多帧拼接或其他分辨率，避免 RGA 按错误布局访问越界数据。
+	 */
 	std::ifstream input(path, std::ios::binary | std::ios::ate);
 
 	if (!input) {
@@ -97,6 +131,10 @@ bool read_exact_frame(const char *path,
 bool write_exact_frame(const char *path,
 		       const std::vector<unsigned char> &buffer)
 {
+	/*
+	 * 输出写入必须完整成功；发生磁盘或 I/O 错误时删除残缺文件，避免后续
+	 * 验证只看到文件存在就把失败结果误认为有效 NV12 帧。
+	 */
 	std::ofstream output(path, std::ios::binary | std::ios::trunc);
 
 	if (!output) {
@@ -120,6 +158,7 @@ bool write_exact_frame(const char *path,
 
 bool resize_once(const rga_buffer_t &src, rga_buffer_t &dst)
 {
+	/* 默认 sync=1：函数返回成功时，目标 buffer 已经可以由 CPU 读取。 */
 	const IM_STATUS status = imresize(src, dst);
 
 	if (status != IM_STATUS_SUCCESS) {
@@ -135,6 +174,7 @@ bool resize_once(const rga_buffer_t &src, rga_buffer_t &dst)
 
 int main(int argc, char **argv)
 {
+	/* 命令行接口固定为一个输入帧和一个输出帧。 */
 	if (argc != 3) {
 		std::cerr
 			<< "ERROR: usage: "
@@ -144,12 +184,14 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
+	/* 必须在删除旧输出之前拒绝同路径，防止把输入帧当成旧输出删掉。 */
 	if (std::strcmp(argv[1], argv[2]) == 0) {
 		std::cerr
 			<< "ERROR: input and output paths must differ\n";
 		return 2;
 	}
 
+	/* 清除上次结果，保证本次失败时不会遗留一个“看似成功”的旧文件。 */
 	std::remove(argv[2]);
 
 	try {
@@ -159,6 +201,10 @@ int main(int argc, char **argv)
 		if (!read_exact_frame(argv[1], src_data))
 			return 3;
 
+		/*
+		 * import 让 librga/驱动认识内存；wrap 只给 handle 附加宽、高、步幅
+		 * 和 NV12 格式，不复制像素。内存实际所有权仍由两个 vector 持有。
+		 */
 		ImportedBuffer src_handle(
 			src_data.data(), src_data.size());
 		ImportedBuffer dst_handle(
@@ -175,6 +221,10 @@ int main(int argc, char **argv)
 		rga_buffer_t dst = wrapbuffer_handle(
 			dst_handle.get(), kDstWidth, kDstHeight, kFormat);
 
+		/*
+		 * 空 rect 表示处理整幅图。imcheck 在提交前验证格式、分辨率和缩放比
+		 * 是否受当前 RGA 硬件/驱动支持，比直接失败在 ioctl 更容易定位。
+		 */
 		im_rect empty = {};
 		const IM_STATUS check = imcheck(src, dst, empty, empty);
 
@@ -197,6 +247,10 @@ int main(int argc, char **argv)
 		std::cout << "warmups=" << kWarmups
 			  << " iterations=" << kIterations << '\n';
 
+		/*
+		 * 预热不计时，用于排除首次打开设备、建立映射和时钟状态切换造成的
+		 * 一次性抖动；正式统计只覆盖 100 次同步 imresize。
+		 */
 		for (int i = 0; i < kWarmups; ++i) {
 			if (!resize_once(src, dst))
 				return 6;
@@ -211,6 +265,7 @@ int main(int argc, char **argv)
 
 		const auto end = std::chrono::steady_clock::now();
 
+		/* 最后一次同步缩放的结果留在 dst_data，计时结束后再写盘。 */
 		if (!write_exact_frame(argv[2], dst_data))
 			return 7;
 
@@ -218,6 +273,10 @@ int main(int argc, char **argv)
 			std::chrono::duration<double, std::micro>(
 				end - start).count();
 		const double average_us = total_us / kIterations;
+		/*
+		 * operations_per_second 是纯 RGA resize 吞吐估算，不包含文件 I/O、
+		 * V4L2 排队或摄像头曝光时间，因此不能等同于端到端摄像头 FPS。
+		 */
 		const double operations_per_second =
 			average_us > 0.0 ? 1000000.0 / average_us : 0.0;
 

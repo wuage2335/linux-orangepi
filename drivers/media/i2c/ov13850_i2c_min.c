@@ -16,6 +16,24 @@
 #include <linux/pm_runtime.h>
 #include <media/v4l2-ctrls.h>
 
+/*
+ * 学习驱动在整条摄像头链路中的职责：
+ *
+ *   用户态 / RKISP notifier
+ *            |
+ *            v
+ *   V4L2 sensor subdev（本文件）
+ *            |  通过 I2C 配置分辨率、曝光、增益、VTS 和 stream 状态
+ *            v
+ *   OV13850 -> MIPI CSI-2 RAW10 -> D-PHY/CIF -> RKISP
+ *
+ * 本驱动只管理 sensor，不接收图像帧，也不负责 ISP/RGA 处理。它向 media
+ * graph 描述 OV13850 能输出什么格式，并在上游请求 stream-on 时保证电源、
+ * 时钟、全局寄存器、模式寄存器和 controls 按正确顺序落到芯片。
+ *
+ * 为避免与正式 ov13850.c 抢占同一设备，本学习驱动只匹配
+ * "learning,ov13850-i2c"。
+ */
 
 
 #define OV13850_XVCLK_FREQ      24000000    // 外部输入时钟频率24MHz
@@ -81,6 +99,12 @@ struct ov13850_regval {
 	u16 reg;
 	u8 val;
 };
+
+/*
+ * 一个 mode 是“用户可枚举的视频模式”和“芯片寄存器配置”的连接点。
+ * width/height/max_fps 面向 V4L2；HTS/VTS/exp_def 用于时序和 control 范围；
+ * reg_list 则是在真正 stream-on 前写入 sensor 的模式寄存器表。
+ */
 struct ov13850_mode {
 	const char *name;
 	u32 width;
@@ -94,7 +118,16 @@ struct ov13850_mode {
 	const struct ov13850_regval *reg_list;
 };
 
-
+/*
+ * 每个 I2C sensor 实例对应一个 ov13850_min。
+ *
+ * 资源层：client、clock、GPIO、regulator 和 powered；
+ * 运行层：cur_mode、global_regs、streaming 和 controls；
+ * V4L2 层：subdev、source pad 和 ACTIVE format。
+ *
+ * lock 把格式切换、control 更新、stream 状态和调试 sysfs 串行化，防止它们
+ * 同时改变同一组芯片寄存器或软件状态。
+ */
 struct ov13850_min {
 	struct i2c_client *client;
 	struct clk *xvclk;
@@ -134,6 +167,11 @@ static inline struct ov13850_min *to_ov13850_min(struct v4l2_subdev *sd)
 static inline struct ov13850_min *
 ov13850_min_from_client(struct i2c_client *client)
 {
+	/*
+	 * v4l2_i2c_subdev_init() 把 clientdata 保存为 struct v4l2_subdev *，
+	 * 不是 struct ov13850_min *。先取回 sd，再用 container_of 找到私有
+	 * 结构，避免把不同类型的指针直接转换后访问错误内存。
+	 */
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 
 	return to_ov13850_min(sd);
@@ -819,7 +857,11 @@ static int ov13850_min_write_array(struct i2c_client *client,
 	return 0;
 }
 
-// 将自定义mode和write_array()结合起来
+/*
+ * 把当前 ACTIVE mode 对应的寄存器表写入 sensor。set_fmt() 只选择 mode 并
+ * 更新软件状态，不立即访问硬件；真正的模式切换统一放在 stream-on 路径，
+ * 这样断电状态下的格式协商不会产生 I2C 访问。
+ */
 static int ov13850_min_apply_mode(struct ov13850_min *cam)
 {
 	struct i2c_client *client = cam->client;
@@ -847,7 +889,11 @@ static int ov13850_min_apply_mode(struct ov13850_min *cam)
 	return 0;
 }
 
-// 选择全局寄存器配置表
+/*
+ * 芯片 revision 决定全局模拟/数字链路初始化表。当前板端实测为 R2A
+ * (0xb2)，学习驱动主动拒绝未知 revision，避免“ID 相同但寄存器语义不同”
+ * 时静默写入错误表。
+ */
 static int ov13850_min_select_global_regs(struct ov13850_min *cam)
 {
 	struct i2c_client *client = cam->client;
@@ -898,7 +944,11 @@ static int ov13850_min_apply_global_init(struct ov13850_min *cam)
 	return 0;
 }
 
-// 选择全局寄存器配置表 + 应用全局寄存器配置表 + 应用当前模式寄存器配置表
+/*
+ * 完整初始化用于调试入口：先建立芯片公共基线，再应用当前模式，最后保持
+ * 0x0100=0 的 software standby。初始化寄存器不等于开始出图，真正 stream-on
+ * 只能由 V4L2 s_stream() 控制。
+ */
 static int ov13850_min_apply_full_init(struct ov13850_min *cam)
 {
 	struct i2c_client *client = cam->client;
@@ -935,6 +985,10 @@ static int ov13850_min_power_on(struct ov13850_min *cam)
     struct device *dev = &cam->client->dev;
     int ret;
 
+    /*
+     * 业务顺序是模块电源 -> 24 MHz 时钟 -> regulators/reset -> 退出 PWDN
+     * -> 等待首个 SCCB/I2C 事务。powered 让重复 resume 保持幂等。
+     */
     if(cam->powered)
         return 0;
 	// 1. 准备电源
@@ -988,6 +1042,10 @@ disable_clk:
 
 static void ov13850_min_power_off(struct ov13850_min *cam)
 {
+	/*
+	 * 下电按相反方向收回资源，并先让 sensor 进入 PWDN/reset，避免在时钟或
+	 * 电源已经消失后继续向 MIPI 总线输出不完整数据。
+	 */
 	if (!cam->powered)
 		return;
     // 开启低功耗
@@ -1029,6 +1087,15 @@ static const struct dev_pm_ops ov13850_min_pm_ops = {
 	SET_RUNTIME_PM_OPS(ov13850_min_runtime_suspend,
 			   ov13850_min_runtime_resume, NULL)
 };
+
+/*
+ * stream-on 的业务事务：
+ *   global init -> mode registers -> replay controls -> 0x0100=1。
+ *
+ * 每次从 runtime suspend 回来 sensor 都可能丢失寄存器，因此不能假设 probe
+ * 阶段写过一次就永久有效。controls 放在 mode 之后重放，保证用户设置的曝光、
+ * 增益、VBLANK 和测试图覆盖模式表中的默认值。
+ */
 static int ov13850_min_start_streaming(struct ov13850_min *cam)
 {
 	int ret;
@@ -1092,6 +1159,11 @@ static int ov13850_min_s_stream(struct v4l2_subdev *sd, int on)
 	if (on == cam->streaming)
 		goto unlock;
 
+	/*
+	 * runtime-PM 引用覆盖完整 streaming 生命周期：stream-on 获取引用并上电，
+	 * stream-off 写入 standby 后释放引用。这样采集中 sensor 不会被自动下电，
+	 * 空闲时又能回到 suspended/usage=0。
+	 */
 	if (on) {
 		ret = pm_runtime_get_sync(&cam->client->dev);
 		if (ret < 0) {
@@ -1130,6 +1202,10 @@ static int ov13850_min_set_ctrl(struct v4l2_ctrl *ctrl)
 	u8 test_pattern;
 	int ret = 0;
 
+	/*
+	 * VBLANK 会改变一帧总行数 VTS，因此曝光上限也必须同步改变，并保留
+	 * 16 行安全余量。这个软件约束即使 sensor 当前断电也要立即更新。
+	 */
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		exposure_max = cam->cur_mode->height + ctrl->val - 16;
@@ -1141,6 +1217,11 @@ static int ov13850_min_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
+	/*
+	 * sensor 未上电时只保存 control 值，不为一次 control 写入单独唤醒硬件。
+	 * 下次 stream-on 的 v4l2_ctrl_handler_setup() 会统一重放。若设备正在使用，
+	 * 才把新值立即写到寄存器。
+	 */
 	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
@@ -1195,6 +1276,11 @@ static const struct v4l2_ctrl_ops ov13850_min_ctrl_ops = {
 
 static int ov13850_min_init_controls(struct ov13850_min *cam)
 {
+	/*
+	 * controls 把芯片时序能力转换成标准 V4L2 用户接口。LINK_FREQ/PIXEL_RATE/
+	 * HBLANK 描述固定链路，VBLANK/EXPOSURE/GAIN/TEST_PATTERN 可由用户修改。
+	 * handler 与 cam->lock 共用同一把锁，使 control 与 set_fmt/s_stream 串行。
+	 */
 	struct v4l2_ctrl_handler *handler = &cam->ctrl_handler;
 	const struct ov13850_mode *mode = cam->cur_mode;
 	struct v4l2_ctrl *link_freq;
@@ -1616,7 +1702,11 @@ static const struct attribute_group ov13850_min_attr_group = {
 
 /// SYSFS PART END  ///
 
-// 给出一个枚举函数，返回摄像头支持的媒体总线格式
+/*
+ * Pad operations 是 sensor 与 CIF/ISP 协商能力的接口。这里只暴露一个 source
+ * pad、RAW10 BGGR media-bus code 和两种离散模式；它描述的是 MIPI 总线上传输
+ * 的 RAW 数据，不是 ISP 处理后的 NV12。
+ */
 static int ov13850_enum_mbus_code(struct v4l2_subdev *sd, 
 					struct v4l2_subdev_state *state,
 			    struct v4l2_subdev_mbus_code_enum *code)
@@ -1668,6 +1758,10 @@ static int ov13850_enum_frame_interval(
     if (fie->index >= ARRAY_SIZE(ov13850_min_supported_modes))
         return -EINVAL;
 
+    /*
+     * Rockchip CIF notifier 会把 fie 清零后只设置 index/pad，再期待 sensor
+     * 回填 code、尺寸和 interval，因此 code=0 表示“请枚举”，不能拒绝。
+     */
     if (fie->code && fie->code != OV13850_MBUS_CODE)
         return -EINVAL;
 
@@ -1692,6 +1786,10 @@ static int ov13850_min_get_reso_dist(const struct ov13850_mode *mode,
 static const struct ov13850_mode *
 ov13850_min_find_best_fit(struct v4l2_subdev_format *fmt)
 {
+	/*
+	 * sensor 只支持离散模式。用户请求任意尺寸时，以宽高差之和选择最近模式，
+	 * 并把实际可用尺寸回填给调用者；这里不会让 sensor 任意缩放。
+	 */
     struct v4l2_mbus_framefmt *framefmt = &fmt->format;
     const struct ov13850_mode *mode;
     const struct ov13850_mode *best_mode;
@@ -1754,6 +1852,11 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&cam->lock);
 
+	/*
+	 * TRY format 只属于当前打开句柄的协商草稿，不改变 cam->cur_mode、controls
+	 * 或硬件。ACTIVE format 才更新设备全局状态，并在 streaming 时返回 EBUSY，
+	 * 防止一边传输帧一边更换 sensor 时序。
+	 */
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		mode = ov13850_min_find_best_fit(fmt);
 
@@ -1786,6 +1889,10 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	fmt->format.colorspace = V4L2_COLORSPACE_RAW;
 
+	/*
+	 * 选择新 ACTIVE mode 后，HBLANK、VBLANK 和曝光范围都依赖新的 HTS/VTS，
+	 * 必须作为同一状态更新一起调整。寄存器仍留到下次 stream-on 再写。
+	 */
 	cam->cur_mode = mode;
 	cam->fmt = fmt->format;
 
@@ -1818,6 +1925,7 @@ static int ov13850_min_get_mbus_config(struct v4l2_subdev *sd, unsigned int pad_
 	if (pad_id != OV13850_PAD_SOURCE)
 		return -EINVAL;
 
+	/* 向接收端声明物理连接是 2-lane CSI-2 D-PHY。 */
 	config->type = V4L2_MBUS_CSI2_DPHY;
 	config->bus.mipi_csi2.flags = 0;
 	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
@@ -1871,6 +1979,7 @@ static int ov13850_min_open(struct v4l2_subdev *sd,
 
 	mutex_lock(&cam->lock);
 
+	/* 每个新 subdev 文件句柄从默认模式获得独立 TRY format。 */
 	try_fmt->width = mode->width;
 	try_fmt->height = mode->height;
 	try_fmt->code = OV13850_MBUS_CODE;
@@ -1898,6 +2007,12 @@ static int ov13850_min_probe(struct i2c_client *client,
 	int ret;
 	int i;
 
+    /*
+     * probe 建立“硬件存在 -> V4L2 可发现”的完整关系：
+     *   取得板级资源 -> 临时上电 -> 校验 ID/revision -> 初始化 controls/
+     *   media entity -> 注册异步 sensor subdev -> 启用 runtime PM。
+     * 任一步失败都按创建顺序的反方向回滚。
+     */
     dev_info(dev, "probe start, i2c addr=0x%02x\n", client->addr);
 
     // check if the I2C adapter supports plain I2C functionality
@@ -2020,6 +2135,10 @@ static int ov13850_min_probe(struct i2c_client *client,
 	}
 	dev_info(dev, "sysfs ready: chip_id revision reg_addr reg_value array_test mode_info mode_apply full_init\n");
 
+	/*
+	 * probe 此刻硬件仍处于上电状态，所以先标记 active，再启用 runtime PM。
+	 * pm_runtime_idle() 随后允许框架在没有使用者时调用 runtime_suspend 下电。
+	 */
 	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
 	pm_runtime_idle(dev);
@@ -2048,6 +2167,10 @@ err_destroy_mutex:
 
 static void ov13850_min_remove(struct i2c_client *client)
 {
+	/*
+	 * remove 先从用户可见的 sysfs/media graph 注销，再关闭 runtime PM 和硬件。
+	 * 如果设备已经 suspended，就不能重复执行电源关闭序列。
+	 */
     // 获取之前保存进去的驱动私有数据 cam
     struct ov13850_min *cam = ov13850_min_from_client(client);
 	// 注销 V4L2 子设备
