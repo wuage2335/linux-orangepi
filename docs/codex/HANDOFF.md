@@ -6,16 +6,16 @@
 
 这是学习项目。用户是主要实践者；Codex 负责原理讲解、拆分步骤、审查结果和
 诊断。代码或板端修改前先说明目标、文件和风险；未经用户明确授权，不得一次性
-代写完整阶段。当前进入阶段 4，先隔离验证 `NV12 -> MPP` 文件编码，再接入
-V4L2 实时帧；编码、网络推流和 DMA-BUF 不得一次混合验证。任何完成结论都必须
-有构建、码流解码或实机日志证据。
+代写完整阶段。阶段 4 已完成官方 MPP、文件编码、实时 copy 和 DMA-BUF 验证；
+当前进入阶段 5，先建立带明确时间戳的 RTP/RTSP 低延迟链路。任何完成结论都
+必须有构建、码流解码或实机日志证据。
 
 ## 1. 当前状态
 
 - 项目：Orange Pi 5 Pro（RK3588S）上的 OV13850 CAM2 摄像头链路。
-- 项目阶段：阶段 0-3 已完成实机验收；当前为阶段 4“MPP 硬件编码”。下一项
-  是确认板端 MPP 用户态环境，并建立 `1920x1080 NV12 -> H.264` 文件编码
-  最小闭环，再接入 V4L2 实时帧。
+- 项目阶段：阶段 0-4 已完成实机验收；当前为阶段 5“低延迟视频流”。阶段 5
+  先用已验证的 H.264 elementary stream 建立 RTP/RTSP 发送与 PC 解码基线，
+  再优化时间戳、GOP、队列和播放器缓存。
 - 正式交付/参考驱动：`drivers/media/i2c/ov13850.c`。
 - 当前学习实现：`drivers/media/i2c/ov13850_i2c_min.c`，仅能绑定
   `learning,ov13850-i2c`，不得与正式 `ovti,ov13850` binding 竞争。
@@ -151,9 +151,28 @@ V4L2 实时帧；编码、网络推流和 DMA-BUF 不得一次混合验证。任
 5. 阶段 3 的按需变换只有 resize；旋转/色彩转换无当前业务需求。DMA-BUF 留到
    低延迟优化。
 
-阶段 3 功能与对比目标完成。下一阶段为阶段 4：RK MPP H.264/H.265 硬件编码。
+阶段 3 功能与对比目标完成。
 
-## 7. 文档维护
+## 7. 阶段 4 MPP 验收结果（2026-08-25）
+
+1. 官方 MPP 1.1.0、commit `c08762ebf` 完成 aarch64 交叉构建并以 bundle
+   部署；`/dev/mpp_service` 和 RKVENC HW ID `0x50603312` 可用。
+2. 官方样例和项目自有 H.264/H.265 文件编码均通过；CBR/VBR、GOP30/60、运行
+   中请求 IDR 有实机证据。
+3. 自定义 H.264 静态输入300帧由官方 decoder 和 FFmpeg完整解码；H.264/H.265
+   参数码流各30帧也完成双重解码。
+4. V4L2 H.264 copy path：300帧、30.03fps、0 timeout/drop，动态场景约9.16Mbps。
+5. DMA-BUF path：`EXPBUF -> MPP_BUFFER_TYPE_EXT_DMA` 300帧通过。Color-bar 下
+   copy/dmabuf码流 SHA 完全相同；DMA 消除约1.82ms copy，CPU 8%降至3%。
+6. V4L2 有效 NV12 UV offset 对应 ver_stride=1080；copy MppBuffer 使用1088
+   padding。曾用1088解释外部 buffer 会得到错误色度/异常小码流，已修复。
+7. 退出后 sensor PM 为 suspended/usage 0，无新增 CIF/ISP/MPP/RKVENC/IOMMU
+   fault。启动时 VENC regulator/devfreq 告警不阻塞编码，保留为频率管理观察项。
+8. Raw Annex-B 的 FFmpeg输入FPS可能显示25；阶段5必须由RTP/容器PTS明确30fps。
+
+阶段 4 完成。当前进入阶段 5：RTP/RTSP 低延迟视频流。
+
+## 8. 文档维护
 
 - 重要状态同时更新本文件、`task_plan.md` 与 `progress.md`。
 - 构建/启动/部署问题追加到 `orangepi5pro-kernel-troubleshooting.md`。

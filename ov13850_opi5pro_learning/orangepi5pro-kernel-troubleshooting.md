@@ -792,7 +792,70 @@ benchmark 中 direct 用户态 CPU 更低，但 system CPU 和 RGA 平均时间�
 板端最初缺少 `/usr/bin/time`，测试时安装 Ubuntu `time` 1.9；它只属于 benchmark
 工具，不是产品运行依赖。
 
-## 18. 新问题记录模板
+## 18. 官方 MPP SDK 构建脚本的三处契约错误（已解决，2026-08-25）
+
+### 18.1 现象与根因
+
+1. `git clone --no-checkout` 后立即检查 status，会把所有未 checkout 文件视为删除；
+2. 官方 install 把 headers 放在 `include/rockchip/`，不是 `include/` 根目录；
+3. 重定向创建 `SHA256SUMS` 后再 `find . -type f`，会把清单自身纳入 hash，形成
+   不可满足的自引用。
+
+### 18.2 修复
+
+- 先 checkout 固定 commit，再检查工作树；
+- 保持官方 `include/rockchip` 布局；
+- 生成 SHA 时排除 `SHA256SUMS`；
+- 对 `librockchip_mpp.so` symlink 使用 `file -L` 检查目标架构。
+
+最终官方 MPP 1.1.0 SDK、headers、shared library、`mpi_enc_test` 和
+`mpp_info_test` 全部通过 aarch64 与 SHA 验证。
+
+## 19. RKVENC regulator/devfreq 启动告警（当前不阻塞，2026-08-25）
+
+### 19.1 现象
+
+两个 RKVENC core 启动时报告缺少 VENC regulator、OPP/devfreq 初始化失败，随后
+仍 attach CCU 并 probe finish。
+
+### 19.2 验证结论
+
+官方样例、自定义 H.264/H.265、实时 copy 和 DMA-BUF 均完成硬件编码，说明该
+告警不阻塞当前功能。它可能影响动态频率管理；只有持续编码出现性能或温度瓶颈
+时才追查 DTS regulator/OPP，不能在功能验证前先改设备树。
+
+## 20. Raw H.264/H.265 被 FFmpeg 猜测为 25 fps（边界说明，2026-08-25）
+
+MPP 配置与 frame PTS 均为30fps，但 FFmpeg读取 raw Annex-B 时可能显示25fps，
+因为 elementary stream没有容器/RTP wall-clock timestamps，且该版本 VUI timing
+不足以让探测器稳定得出30fps。
+
+独立 FFmpeg仍完整解码H.264 300帧/10秒以及H.264/H.265参数码流，无错误。阶段5
+必须由RTP timestamps或容器time base明确30fps，不能依赖raw stream自动探测。
+
+## 21. DMA-BUF 导入成功但色度 offset 错误（已解决，2026-08-25）
+
+### 21.1 现象
+
+`VIDIOC_EXPBUF` 和 `mpp_buffer_import` 均成功，编码也返回300 packets，但首版
+DMA码流异常偏小。仅凭fd导入和非空码流会误判成功。
+
+### 21.2 根因
+
+V4L2 allocation size 为3,133,440 bytes，但有效NV12仍按1080行Y后紧跟UV；首版
+MPP frame错误使用ver_stride=1088，从`1920*1088`读取UV。Allocation size相同
+不代表图像layout相同。
+
+### 21.3 修复与证据
+
+- Copy内部MppBuffer继续使用ver_stride=1088并逐行padding；
+- DMA外部V4L2 buffer使用ver_stride=1080；
+- RGA/MPP完成前不QBUF；析构先put MppBuffer，再close EXPBUF fd和munmap。
+
+Sensor color-bar下copy/dmabuf H.264码流SHA完全相同，300帧均可解码。DMA消除
+约1.82ms copy，CPU从8%降到3%。这才构成layout/cache/ownership正确的证据。
+
+## 22. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

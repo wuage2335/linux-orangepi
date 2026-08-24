@@ -24,8 +24,8 @@
 - [x] 阶段 1：传感器与 DTS
 - [x] 阶段 2：V4L2 驱动完善
 - [x] 阶段 3：ISP 与 RGA 图像处理
-- [ ] 阶段 4：MPP 硬件编码（当前阶段）
-- [ ] 阶段 5：低延迟视频流
+- [x] 阶段 4：MPP 硬件编码
+- [ ] 阶段 5：低延迟视频流（当前阶段）
 - [ ] 阶段 6：性能测量与稳定性
 - [ ] 阶段 7：AI 感知与业务扩展（可选）
 
@@ -103,7 +103,7 @@ control event 订阅。详细证据见 `HANDOFF.md` 和 `progress.md`。
 后续低延迟优化。详细证据见 `rga_nv12_file_resize_validation.md`、
 `rga_v4l2_live_validation.md` 和 `rga_v4l2_direct_comparison_validation.md`。
 
-## 阶段 4：MPP 硬件编码（当前阶段）
+## 阶段 4：MPP 硬件编码（已完成）
 
 目标：将摄像头输出送入 RK MPP，得到稳定的 H.264/H.265 硬件编码码流。
 
@@ -116,7 +116,22 @@ control event 订阅。详细证据见 `HANDOFF.md` 和 `progress.md`。
 
 完成标准：持续生成可正常解码的 1080p30 H.264/H.265 码流，并明确数据拷贝次数和缓冲区所有权。
 
-## 阶段 5：低延迟视频流
+阶段 4 验收记录（2026-08-25）：
+
+- [x] 固定官方 MPP 1.1.0 并完成可复现 aarch64 SDK/bundle。
+- [x] 官方 `mpi_enc_test` 与实际 RKISP NV12 H.264 编码通过。
+- [x] 自定义 H.264/H.265 文件编码、CBR/VBR、GOP、请求 IDR 通过。
+- [x] H.264/H.265 均由官方 MPP decoder 和独立 FFmpeg 完整解码。
+- [x] V4L2 -> MPP H.264 copy path 300 帧、约30fps、0 timeout/drop。
+- [x] V4L2 EXPBUF -> MPP EXT_DMA 300 帧通过；color-bar 下 copy/dmabuf 码流
+  SHA 完全相同。
+- [x] DMA-BUF 移除约1.82ms copy，进程 CPU 8%降至3%；PM 和
+  CIF/ISP/MPP/RKVENC/IOMMU fault 检查通过。
+
+Raw Annex-B 输入侧 FPS 可能被 FFmpeg 猜测为25；MPP 配置与 PTS 使用30fps，
+阶段5必须由 RTP/容器 timestamps 明确时间基。
+
+## 阶段 5：低延迟视频流（当前阶段）
 
 目标：通过 RTP/RTSP 将编码码流推送到 PC，并控制缓冲和编码延迟。
 
@@ -157,7 +172,7 @@ control event 订阅。详细证据见 `HANDOFF.md` 和 `progress.md`。
 ## 当前决策
 
 - 后续所有阶段按学习陪练模式推进，不默认由 Codex 直接完成实现。
-- 阶段 0-3 已完成，当前从阶段 4 MPP 硬件编码开始。
+- 阶段 0-4 已完成，当前从阶段 5“低延迟视频流”开始。
 - 正式 `ov13850.c` 作为主学习和交付驱动，`ov13850_i2c_min.c` 仅用于寄存器验证与故障定位。
 - 第一版固定为 `1080p30 + H.264 + RTP/RTSP`，链路稳定后再提高分辨率或接入 AI。
 - RGA 是按需节点，不需要缩放、旋转或格式转换时直接绕过。

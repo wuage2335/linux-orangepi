@@ -1,5 +1,22 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-25 阶段 4
+
+- 固定官方 Rockchip MPP 1.1.0、commit `c08762ebf`，建立可复现 aarch64 SDK
+  builder 和自包含 bundle；板端不做系统级 MPP 安装。
+- `/dev/mpp_service`、RKVENC/VEPU2 和官方 `mpi_enc_test` 验证通过；VENC
+  regulator/devfreq 启动告警不阻塞当前硬件编码。
+- 自定义 1920x1080 NV12 H.264/H.265 文件编码通过，支持 CBR/VBR、4/8/12
+  Mbps、GOP30/60 和请求 IDR；官方 decoder 与 FFmpeg 均完整解码。
+- 实时 V4L2->MPP H.264 copy path 完成300帧、30.03fps、0 timeout/drop，动态
+  场景码流约9.16Mbps。
+- `/dev/video11` 支持4个 EXPBUF，均为3,133,440 bytes；MPP EXT_DMA 原型完成
+  300帧。Color-bar 下 copy/dmabuf码流 SHA 完全相同。
+- DMA-BUF 路径必须使用 ver_stride=1080 解释外部 NV12；copy内部 buffer 使用
+  1088 padding。DMA 消除约1.82ms copy，进程 CPU 从8%降到3%。
+- PM 为 suspended/usage 0，无新增 CIF/ISP/MPP/RKVENC/IOMMU fault。
+- 阶段 4 完成，当前进入阶段 5 RTP/RTSP 低延迟视频流。
+
 ## 2026-08-25
 
 - 阶段 3 ISP/RGA 功能与对比目标完成：RKISP mainpath 稳定输出 1920x1080

@@ -51,7 +51,8 @@
 ## 摄像头链路实施状态（2026-08-25）
 
 - 阶段 0“基线验证”、阶段 1“传感器与 DTS”、阶段 2“V4L2 驱动完善”和
-  阶段 3“ISP/RGA”均已完成；当前进入阶段 4 MPP 硬件编码。
+  阶段 3“ISP/RGA”、阶段 4“MPP 硬件编码”均已完成；当前进入阶段 5
+  “低延迟视频流”。
 - 学习驱动 `ov13850_i2c_min.c` 已完成 controls、runtime PM、双模式、
   TRY/ACTIVE、stream lifecycle 和内建实机验证。
 - RKISP mainpath 已验证 1920x1080 NV12@30；RGA 文件、实时 copy、实时
@@ -61,6 +62,28 @@
 - 当前按需图像变换只有 resize；旋转/色彩转换无业务需求，DMA-BUF 留到后续
   低延迟优化。
 - 阶段计划继续只使用阶段编号，不附带周或天等时间估算。
+
+## MPP 阶段 4 最终结论
+
+- 用户态固定使用 Rockchip 官方 MPP `1.1.0`、提交
+  `c08762ebfadeb4e986d2fed993bc7a54862d3ebe`；源码、交叉编译产物和 bundle
+  都位于忽略的 `mpp/build/`，不污染系统库，也不把整套上游源码提交进仓库。
+- 文件路径已验证 H.264/H.265、CBR/VBR、4/8/12 Mbps、GOP 30/60 和运行中
+  请求 IDR；官方 MPP decoder 与独立 FFmpeg 均能完整解码目标帧数。
+- 实时 copy 路径完成 RKISP 1920x1080 NV12@30 -> MPP H.264 的 300 帧连续
+  编码，timeout/drop 均为 0，停流后 sensor runtime PM 回到 suspended/0。
+- DMA-BUF 路径通过 `VIDIOC_EXPBUF` 和 `MPP_BUFFER_TYPE_EXT_DMA` 导入同一
+  V4L2 buffer；确定性彩条输入下与 copy 路径输出逐字节一致，同时 CPU 由
+  8% 降至 3%，因此 DMA-BUF 是阶段 5 的推荐输入路径。
+- DMA-BUF 的 `ver_stride` 必须按 V4L2 实际紧凑布局使用 1080；MPP 内部 copy
+  buffer 才使用 1088。错误地把外部 buffer 声明成 1088 不一定报错，却会从
+  错误 UV 偏移读取数据并产生异常小码流。
+- RKVENC regulator/devfreq OPP 启动告警未阻止两个编码核心 probe、官方样例或
+  项目编码器工作，当前判定为非阻塞的频率管理风险，后续性能/温升测试继续
+  观察。
+- Annex-B 裸流没有容器或 RTP 时间戳；即使 MPP 以 30 fps 配置，FFmpeg 仍可能
+  猜测为 25 fps。阶段 5 必须在 RTP/RTSP 层显式提供 90 kHz 时间戳，不能用
+  裸流探测帧率作为实时链路时序证据。
 
 ## `ov13850_i2c_min.c` 阶段 2 最终结论
 

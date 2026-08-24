@@ -15,6 +15,10 @@
 9. [`rga_nv12_file_resize_validation.md`](rga_nv12_file_resize_validation.md)：文件式 RGA resize 实机证据。
 10. [`rga_v4l2_live_validation.md`](rga_v4l2_live_validation.md)：V4L2 MMAP + memcpy + RGA 实时证据。
 11. [`rga_v4l2_direct_comparison_validation.md`](rga_v4l2_direct_comparison_validation.md)：bypass/copy/direct CPU、吞吐与 RSS 对比。
+12. [`mpp_official_environment_validation.md`](mpp_official_environment_validation.md)：官方 MPP 1.1.0 与 RKVENC 环境验证。
+13. [`mpp_file_encoding_validation.md`](mpp_file_encoding_validation.md)：H.264/H.265 文件编码与参数矩阵。
+14. [`mpp_live_encoding_validation.md`](mpp_live_encoding_validation.md)：V4L2 实时 H.264 copy/DMA-BUF 证据。
+15. [`mpp_dmabuf_feasibility.md`](mpp_dmabuf_feasibility.md)：EXPBUF、EXT_DMA、stride 和所有权结论。
 
 ## 当前项目主线
 
@@ -23,15 +27,16 @@ OV13850/MIPI -> CSI/DPHY -> CIF/ISP -> V4L2
 -> RGA（按需）-> MPP -> RTP/RTSP -> PC 播放
 ```
 
-阶段 0-3 已完成，当前处于阶段 4“MPP 硬件编码”。
+阶段 0-4 已完成，当前处于阶段 5“低延迟视频流”。
 
 阶段 2 学习驱动已完成 controls、runtime PM、双模式、TRY/ACTIVE、stream
 lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV12@30、
 文件式 RGA、实时 copy/direct 两种路径，以及 bypass/copy/direct CPU/吞吐/RSS
 对比。所有完成结论均有上述 validation 文档和 HANDOFF 原始证据支持。
 
-当前执行入口：先跑通 `NV12 -> RK MPP -> H.264/H.265` 最小编码程序，再配置
-码率、GOP、帧率和关键帧，最后处理 V4L2/RGA/MPP 缓冲区所有权与低拷贝路径。
+阶段 4 已完成官方 MPP、自定义 H.264/H.265、实时 copy 和 DMA-BUF。当前执行
+入口是将已验证 H.264 elementary stream 通过 RTP/RTSP 发送到 PC，建立可测量
+播放基线，再优化 PTS、GOP、发送队列和播放器缓存。
 
 ## 协作约束
 
