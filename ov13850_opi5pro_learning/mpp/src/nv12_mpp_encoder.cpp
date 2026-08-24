@@ -24,14 +24,105 @@ constexpr int kWidth = 1920;
 constexpr int kHeight = 1080;
 constexpr int kHorStride = 1920;
 constexpr int kVerStride = 1088;
-constexpr int kFrames = 300;
 constexpr int kFps = 30;
-constexpr int kBitrate = 8000000;
-constexpr int kGop = 60;
 constexpr std::size_t kInputSize =
 	static_cast<std::size_t>(kWidth) * kHeight * 3 / 2;
 constexpr std::size_t kFrameSize =
 	static_cast<std::size_t>(kHorStride) * kVerStride * 3 / 2;
+
+enum class Codec {
+	H264,
+	H265,
+};
+
+enum class RateControl {
+	Cbr,
+	Vbr,
+};
+
+struct EncoderConfig {
+	Codec codec = Codec::H264;
+	RateControl rc = RateControl::Cbr;
+	int bitrate = 8000000;
+	int gop = 60;
+	int frames = 300;
+	int request_idr = -1;
+};
+
+const char *codec_name(Codec codec)
+{
+	return codec == Codec::H264 ? "h264" : "h265";
+}
+
+const char *rc_name(RateControl rc)
+{
+	return rc == RateControl::Cbr ? "cbr" : "vbr";
+}
+
+int parse_positive(const char *text, const char *option)
+{
+	const int value = std::stoi(text);
+	if (value <= 0)
+		throw std::runtime_error(std::string(option) + " must be positive");
+	return value;
+}
+
+struct CommandLine {
+	EncoderConfig config;
+	const char *input = nullptr;
+	const char *output = nullptr;
+};
+
+CommandLine parse_command_line(int argc, char **argv)
+{
+	CommandLine command;
+	int index = 1;
+
+	while (index < argc - 2) {
+		const std::string option = argv[index++];
+		if (index >= argc - 1)
+			throw std::runtime_error("missing value for " + option);
+		const char *value = argv[index++];
+
+		if (option == "--codec") {
+			if (!std::strcmp(value, "h264"))
+				command.config.codec = Codec::H264;
+			else if (!std::strcmp(value, "h265"))
+				command.config.codec = Codec::H265;
+			else
+				throw std::runtime_error("--codec must be h264 or h265");
+		} else if (option == "--rc") {
+			if (!std::strcmp(value, "cbr"))
+				command.config.rc = RateControl::Cbr;
+			else if (!std::strcmp(value, "vbr"))
+				command.config.rc = RateControl::Vbr;
+			else
+				throw std::runtime_error("--rc must be cbr or vbr");
+		} else if (option == "--bitrate") {
+			command.config.bitrate = parse_positive(value, "--bitrate");
+		} else if (option == "--gop") {
+			command.config.gop = parse_positive(value, "--gop");
+		} else if (option == "--frames") {
+			command.config.frames = parse_positive(value, "--frames");
+		} else if (option == "--request-idr") {
+			command.config.request_idr = std::stoi(value);
+			if (command.config.request_idr < 0)
+				throw std::runtime_error("--request-idr must be non-negative");
+		} else {
+			throw std::runtime_error("unknown option: " + option);
+		}
+	}
+
+	if (argc - index != 2)
+		throw std::runtime_error("expected input and output paths");
+
+	command.input = argv[index];
+	command.output = argv[index + 1];
+	if (command.config.request_idr >= command.config.frames)
+		throw std::runtime_error("--request-idr must be smaller than --frames");
+
+	return command;
+}
 
 void check_mpp(MPP_RET ret, const char *operation)
 {
@@ -86,7 +177,8 @@ void copy_nv12_to_strided(void *destination,
 
 class MppEncoder {
 public:
-	MppEncoder()
+	explicit MppEncoder(const EncoderConfig &config)
+		: config_(config)
 	{
 		try {
 			initialize();
@@ -136,7 +228,14 @@ public:
 		mpp_packet_deinit(&packet);
 	}
 
+	void request_idr()
+	{
+		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_IDR_FRAME, nullptr),
+			  "MPP_ENC_SET_IDR_FRAME");
+	}
+
 	bool encode_frame(int index,
+			  bool end_of_stream,
 			  std::ofstream &output,
 			  std::uint64_t &encoded_bytes,
 			  std::uint64_t &packet_count,
@@ -153,7 +252,7 @@ public:
 		mpp_frame_set_fmt(frame, MPP_FMT_YUV420SP);
 		mpp_frame_set_pts(frame,
 			static_cast<RK_S64>(index) * 1000000 / kFps);
-		mpp_frame_set_eos(frame, index == kFrames - 1);
+		mpp_frame_set_eos(frame, end_of_stream);
 		mpp_frame_set_buffer(frame, frame_buffer_);
 
 		check_mpp(mpp_packet_init_with_buffer(&packet, packet_buffer_),
@@ -214,9 +313,11 @@ private:
 
 	void initialize()
 	{
+		const MppCodingType coding = config_.codec == Codec::H264 ?
+			MPP_VIDEO_CodingAVC : MPP_VIDEO_CodingHEVC;
+
 		check_mpp(mpp_create(&ctx_, &mpi_), "mpp_create");
-		check_mpp(mpp_init(ctx_, MPP_CTX_ENC, MPP_VIDEO_CodingAVC),
-			  "mpp_init(H.264)");
+		check_mpp(mpp_init(ctx_, MPP_CTX_ENC, coding), "mpp_init(encoder)");
 
 		MppPollType timeout = MPP_POLL_BLOCK;
 		check_mpp(mpi_->control(ctx_, MPP_SET_OUTPUT_TIMEOUT, &timeout),
@@ -232,17 +333,19 @@ private:
 		set_s32("prep:ver_stride", kVerStride);
 		set_s32("prep:format", MPP_FMT_YUV420SP);
 
-		set_s32("rc:mode", MPP_ENC_RC_MODE_CBR);
+		set_s32("rc:mode", config_.rc == RateControl::Cbr ?
+			MPP_ENC_RC_MODE_CBR : MPP_ENC_RC_MODE_VBR);
 		set_s32("rc:fps_in_flex", 0);
 		set_s32("rc:fps_in_num", kFps);
 		set_s32("rc:fps_in_denom", 1);
 		set_s32("rc:fps_out_flex", 0);
 		set_s32("rc:fps_out_num", kFps);
 		set_s32("rc:fps_out_denom", 1);
-		set_s32("rc:bps_target", kBitrate);
-		set_s32("rc:bps_max", kBitrate * 17 / 16);
-		set_s32("rc:bps_min", kBitrate * 15 / 16);
-		set_s32("rc:gop", kGop);
+		set_s32("rc:bps_target", config_.bitrate);
+		set_s32("rc:bps_max", config_.bitrate * 17 / 16);
+		set_s32("rc:bps_min", config_.rc == RateControl::Cbr ?
+			config_.bitrate * 15 / 16 : config_.bitrate / 16);
+		set_s32("rc:gop", config_.gop);
 		set_s32("rc:qp_init", -1);
 		set_s32("rc:qp_max", 51);
 		set_s32("rc:qp_min", 10);
@@ -250,11 +353,17 @@ private:
 		set_s32("rc:qp_min_i", 10);
 		set_s32("rc:qp_ip", 2);
 
-		set_s32("h264:profile", 100);
-		set_s32("h264:level", 40);
-		set_s32("h264:cabac_en", 1);
-		set_s32("h264:cabac_idc", 0);
-		set_s32("h264:trans8x8", 1);
+		if (config_.codec == Codec::H264) {
+			set_s32("h264:profile", 100);
+			set_s32("h264:level", 40);
+			set_s32("h264:cabac_en", 1);
+			set_s32("h264:cabac_idc", 0);
+			set_s32("h264:trans8x8", 1);
+			set_s32("h264:vui_en", 1);
+		} else {
+			set_s32("h265:diff_cu_qp_delta_depth", 0);
+			set_s32("h265:vui_en", 1);
+		}
 
 		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_CFG, cfg_),
 			  "MPP_ENC_SET_CFG");
@@ -308,27 +417,34 @@ private:
 	MppBufferGroup group_ = nullptr;
 	MppBuffer frame_buffer_ = nullptr;
 	MppBuffer packet_buffer_ = nullptr;
+	EncoderConfig config_;
 };
 
 } // namespace
 
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
-		std::cerr << "ERROR: usage: " << argv[0]
-			  << " <input-1920x1080.nv12> <output.h264>\n";
+	CommandLine command;
+	try {
+		command = parse_command_line(argc, argv);
+	} catch (const std::exception &error) {
+		std::cerr << "ERROR: " << error.what() << '\n'
+			  << "usage: " << argv[0]
+			  << " [--codec h264|h265] [--bitrate bps]"
+			  << " [--gop frames] [--rc cbr|vbr] [--frames count]"
+			  << " [--request-idr index] input.nv12 output\n";
 		return 2;
 	}
 
-	std::remove(argv[2]);
+	std::remove(command.output);
 
 	try {
-		const std::vector<unsigned char> input = read_input(argv[1]);
-		std::ofstream output(argv[2], std::ios::binary | std::ios::trunc);
+		const std::vector<unsigned char> input = read_input(command.input);
+		std::ofstream output(command.output, std::ios::binary | std::ios::trunc);
 		if (!output)
-			throw std::runtime_error("cannot create output H.264 file");
+			throw std::runtime_error("cannot create output bitstream file");
 
-		MppEncoder encoder;
+		MppEncoder encoder(command.config);
 		encoder.load_frame(input);
 
 		std::uint64_t encoded_bytes = 0;
@@ -338,11 +454,14 @@ int main(int argc, char **argv)
 
 		const auto start = std::chrono::steady_clock::now();
 		int frames_out = 0;
-		for (int index = 0; index < kFrames; ++index) {
+		for (int index = 0; index < command.config.frames; ++index) {
+			if (index == command.config.request_idr)
+				encoder.request_idr();
 			const bool eos = encoder.encode_frame(
-				index, output, encoded_bytes, packets, idr_frames);
+				index, index == command.config.frames - 1,
+				output, encoded_bytes, packets, idr_frames);
 			++frames_out;
-			if (index == kFrames - 1 && !eos)
+			if (index == command.config.frames - 1 && !eos)
 				throw std::runtime_error("last packet did not carry EOS");
 		}
 		const auto end = std::chrono::steady_clock::now();
@@ -353,17 +472,20 @@ int main(int argc, char **argv)
 
 		const double elapsed =
 			std::chrono::duration<double>(end - start).count();
-		const double encode_fps = elapsed > 0.0 ? kFrames / elapsed : 0.0;
+		const double encode_fps = elapsed > 0.0 ?
+			command.config.frames / elapsed : 0.0;
 
-		std::cout << "codec=h264 width=" << kWidth
+		std::cout << "codec=" << codec_name(command.config.codec)
+			  << " rc=" << rc_name(command.config.rc)
+			  << " width=" << kWidth
 			  << " height=" << kHeight
 			  << " fps=" << kFps
-			  << " bitrate=" << kBitrate
-			  << " gop=" << kGop << '\n';
+			  << " bitrate=" << command.config.bitrate
+			  << " gop=" << command.config.gop << '\n';
 		std::cout << "hor_stride=" << kHorStride
 			  << " ver_stride=" << kVerStride
 			  << " frame_buffer_bytes=" << kFrameSize << '\n';
-		std::cout << "frames_in=" << kFrames
+		std::cout << "frames_in=" << command.config.frames
 			  << " frames_out=" << frames_out
 			  << " packets=" << packets
 			  << " idr_frames=" << idr_frames
@@ -373,7 +495,7 @@ int main(int argc, char **argv)
 			  << " encode_fps=" << encode_fps << '\n';
 		std::cout << "MPP_FILE_ENCODE_OK\n";
 	} catch (const std::exception &error) {
-		std::remove(argv[2]);
+		std::remove(command.output);
 		std::cerr << "ERROR: " << error.what() << '\n';
 		return 1;
 	}
