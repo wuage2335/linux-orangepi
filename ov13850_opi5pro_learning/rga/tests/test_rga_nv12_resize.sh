@@ -60,9 +60,17 @@ file "$LIB" |
     grep -Fq 'ARM aarch64' ||
     fail 'librga is not aarch64'
 
-ldd "$BIN" |
-    grep -F "$LIB" >/dev/null ||
-    fail 'binary did not resolve the bundled librga.so'
+RESOLVED_LIB=$(ldd "$BIN" |
+    awk '$1 == "librga.so" && $2 == "=>" { print $3; exit }')
+
+[[ -n $RESOLVED_LIB ]] ||
+    fail 'ldd did not report a resolved librga.so'
+
+EXPECTED_LIB=$(readlink -f "$LIB")
+RESOLVED_LIB=$(readlink -f "$RESOLVED_LIB")
+
+[[ $RESOLVED_LIB == "$EXPECTED_LIB" ]] ||
+    fail "binary resolved librga.so to $RESOLVED_LIB, expected $EXPECTED_LIB"
 
 expect_failure no_args
 
