@@ -1,5 +1,23 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-25
+
+- 阶段 3 ISP/RGA 功能与对比目标完成：RKISP mainpath 稳定输出 1920x1080
+  NV12@30，文件式 RGA、实时 copy 和实时 direct-MMAP 均通过实机验收。
+- 实时 copy/direct 都处理 300 帧，30.04 fps、0 timeout、0 sequence drop；退出
+  后 sensor PM 为 suspended/usage 0，无新增 CIF/ISP/RGA/MMU/IOMMU fault。
+- Copy 路径为 `DQBUF -> memcpy -> QBUF -> RGA`；Direct 路径在 STREAMON 前
+  导入 4 个 MMAP 地址，运行时为 `DQBUF -> RGA -> QBUF`。
+- 联合测试中 copy/direct 进程 CPU 为 7.11%/2.64%；独立 benchmark 为
+  4.95%/5.41%。Direct 确定移除了 copy 并降低 RSS，但 total CPU 与 RGA 耗时
+  存在波动，不能声称每轮都更快。
+- bypass/copy/direct 外部 CPU 分别约 1%/5%/5%，最大 RSS 为
+  12,844/19,564/16,380 KB；三条路径均受 sensor 30 fps 节奏限制。
+- 当前按需变换只有 resize；旋转/色彩转换无业务需求。DMA-BUF 留到后续低延迟
+  优化。下一阶段为 RK MPP H.264/H.265 硬件编码。
+- 详细证据：`rga_nv12_file_resize_validation.md`、
+  `rga_v4l2_live_validation.md` 和 `rga_v4l2_direct_comparison_validation.md`。
+
 ## 2026-08-21
 
 - 完成 `ov13850_i2c_min.c` 阶段 2：controls、runtime PM、两模式 TRY/ACTIVE、
