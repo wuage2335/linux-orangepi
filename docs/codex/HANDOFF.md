@@ -139,6 +139,22 @@
 低延迟优化阶段。
 `ov13855-2@36` 仍是独立 DT 清理项，不得混入后续工作。
 
+### 6.1 阶段 3 Direct-MMAP 对比收口（2026-08-25）
+
+1. `rga_v4l2_live` 保持旧 copy CLI，并新增 `--direct`；Direct 在 STREAMON 前
+   导入 4 个 MMAP 地址，帧顺序为 `DQBUF -> RGA -> QBUF`。
+2. Copy/direct 联合测试均处理 300 帧，30.04 fps、0 timeout、0 drop。该轮
+   copy CPU 7.11%，direct 2.64%。
+3. 独立 GNU time benchmark 中 bypass/copy/direct 外部 CPU 分别为 1%/5%/5%，
+   RSS 为 12,844/19,564/16,380 KB。Direct 移除了 copy 并降低 RSS，但该轮
+   system CPU 和 RGA 时间高于 copy，因此不声称总 CPU 或时延必然更低。
+4. Copy/direct 输出大小和 Y/UV 范围均有效；PM 为 suspended/usage 0，无新增
+   CIF/ISP/RGA/MMU/IOMMU fault、timeout 或 overflow。
+5. 阶段 3 的按需变换只有 resize；旋转/色彩转换无当前业务需求。DMA-BUF 留到
+   低延迟优化。
+
+阶段 3 功能与对比目标完成。下一阶段为阶段 4：RK MPP H.264/H.265 硬件编码。
+
 ## 7. 文档维护
 
 - 重要状态同时更新本文件、`task_plan.md` 与 `progress.md`。

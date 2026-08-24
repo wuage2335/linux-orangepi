@@ -261,5 +261,10 @@ bash tests/test_rga_nv12_resize.sh \
 
 尚未宣称完成：
 
-- direct-MMAP import 与显式 memcpy 路径的 CPU/时延对比；
+- DMA-BUF fd 路径与后续端到端低延迟优化。
+
+Direct-MMAP 对比已完成：两种 RGA 模式均稳定处理 300 帧、30.04 fps、0
+timeout/drop。Direct 确定移除了 memcpy 并降低 RSS，但短时 CPU 与 RGA 耗时
+存在波动，不能声称它在每轮测试中都更快。详细证据见
+`docs/codex/rga_v4l2_direct_comparison_validation.md`。
 - DMA-BUF 零拷贝和端到端延迟。
