@@ -12,6 +12,9 @@
 6. [`orangepi5pro-kernel-troubleshooting.md`](orangepi5pro-kernel-troubleshooting.md)：Orange Pi 5 Pro 内核构建、启动、模块、部署和回滚问题手册。
 7. [`../superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md`](../superpowers/specs/2026-08-03-ov13850-stage2-learning-driver-design.md)：已确认的学习驱动阶段 2 设计边界。
 8. [`../superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md`](../superpowers/plans/2026-08-03-ov13850-stage2-learning-driver-plan.md)：逐函数的阶段 2 实施与统一验证计划。
+9. [`rga_nv12_file_resize_validation.md`](rga_nv12_file_resize_validation.md)：文件式 RGA resize 实机证据。
+10. [`rga_v4l2_live_validation.md`](rga_v4l2_live_validation.md)：V4L2 MMAP + memcpy + RGA 实时证据。
+11. [`rga_v4l2_direct_comparison_validation.md`](rga_v4l2_direct_comparison_validation.md)：bypass/copy/direct CPU、吞吐与 RSS 对比。
 
 ## 当前项目主线
 
@@ -20,12 +23,15 @@ OV13850/MIPI -> CSI/DPHY -> CIF/ISP -> V4L2
 -> RGA（按需）-> MPP -> RTP/RTSP -> PC 播放
 ```
 
-当前处于阶段 2“V4L2 驱动完善”。阶段 0“基线验证”和阶段 1“传感器与 DTS”此前已完成，不应无依据重复执行。
+阶段 0-3 已完成，当前处于阶段 4“MPP 硬件编码”。
 
-当前执行状态：学习驱动 2A 已写入一部分静态脚手架（V4L2 control/PM 头文件、
-control 状态字段、寄存器常量、菜单数据，并移除竞争性的
-`i2c:ovti,ov13850` alias）。阶段 2 代码尚未完成，且按用户要求尚未构建、
-加载模块或上机验证；不能据此宣称驱动可用。
+阶段 2 学习驱动已完成 controls、runtime PM、双模式、TRY/ACTIVE、stream
+lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV12@30、
+文件式 RGA、实时 copy/direct 两种路径，以及 bypass/copy/direct CPU/吞吐/RSS
+对比。所有完成结论均有上述 validation 文档和 HANDOFF 原始证据支持。
+
+当前执行入口：先跑通 `NV12 -> RK MPP -> H.264/H.265` 最小编码程序，再配置
+码率、GOP、帧率和关键帧，最后处理 V4L2/RGA/MPP 缓冲区所有权与低拷贝路径。
 
 ## 协作约束
 

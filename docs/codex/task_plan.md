@@ -23,8 +23,8 @@
 - [x] 阶段 0：基线验证
 - [x] 阶段 1：传感器与 DTS
 - [x] 阶段 2：V4L2 驱动完善
-- [ ] 阶段 3：ISP 与 RGA 图像处理
-- [ ] 阶段 4：MPP 硬件编码
+- [x] 阶段 3：ISP 与 RGA 图像处理
+- [ ] 阶段 4：MPP 硬件编码（当前阶段）
 - [ ] 阶段 5：低延迟视频流
 - [ ] 阶段 6：性能测量与稳定性
 - [ ] 阶段 7：AI 感知与业务扩展（可选）
@@ -74,9 +74,9 @@
 
 阶段 2 验收记录（2026-08-21）：2112x1568 为 29.97 fps，4224x3136 为
 7.51 fps；两种 RAW10 模式均成功采帧。`v4l2-compliance` 42/43，唯一遗留为
-control event 订阅。详细证据见 `HANDOFF.md`、`progress.md` 和问题记录。
+control event 订阅。详细证据见 `HANDOFF.md` 和 `progress.md`。
 
-## 阶段 3：ISP 与 RGA 图像处理（当前阶段）
+## 阶段 3：ISP 与 RGA 图像处理（已完成）
 
 目标：理解 RAW 数据经过 RKISP 后生成 NV12/YUV 的过程，并按需使用 RGA 完成缩放、旋转或色彩转换。
 
@@ -89,7 +89,21 @@ control event 订阅。详细证据见 `HANDOFF.md`、`progress.md` 和问题记
 
 完成标准：稳定输出指定分辨率的 NV12 帧；需要变换时走 RGA，不需要变换时允许绕过 RGA。
 
-## 阶段 4：MPP 硬件编码
+阶段 3 验收记录（2026-08-25）：
+
+- [x] 区分 CIF RAW、RKISP mainpath/selfpath，并固定 1920x1080 NV12@30。
+- [x] 官方 librga 1.10.6_[3] 文件式 resize 验证通过。
+- [x] 实时 copy 路径处理 300 帧，30.04 fps、0 timeout/drop。
+- [x] 实时 direct-MMAP 路径处理 300 帧，30.04 fps、0 timeout/drop。
+- [x] 完成 bypass/copy/direct CPU、吞吐和 RSS 对比；Direct 确定移除 memcpy
+  并降低 RSS，但总 CPU/RGA 耗时存在波动，不声称每轮必然更快。
+- [x] 输出、runtime PM 和 CIF/ISP/RGA/MMU/IOMMU fault 检查通过。
+
+当前业务只需要 resize；旋转和色彩转换不作为无需求功能实现。DMA-BUF 留到
+后续低延迟优化。详细证据见 `rga_nv12_file_resize_validation.md`、
+`rga_v4l2_live_validation.md` 和 `rga_v4l2_direct_comparison_validation.md`。
+
+## 阶段 4：MPP 硬件编码（当前阶段）
 
 目标：将摄像头输出送入 RK MPP，得到稳定的 H.264/H.265 硬件编码码流。
 
@@ -143,10 +157,12 @@ control event 订阅。详细证据见 `HANDOFF.md`、`progress.md` 和问题记
 ## 当前决策
 
 - 后续所有阶段按学习陪练模式推进，不默认由 Codex 直接完成实现。
-- 当前从阶段 2 开始，不重复阶段 0 和阶段 1。
+- 阶段 0-3 已完成，当前从阶段 4 MPP 硬件编码开始。
 - 正式 `ov13850.c` 作为主学习和交付驱动，`ov13850_i2c_min.c` 仅用于寄存器验证与故障定位。
 - 第一版固定为 `1080p30 + H.264 + RTP/RTSP`，链路稳定后再提高分辨率或接入 AI。
 - RGA 是按需节点，不需要缩放、旋转或格式转换时直接绕过。
+- 阶段 3 对比结论：bypass 资源最低；Direct 消除显式 copy，但是否降低总 CPU
+  需结合多轮实测，不能仅凭“零拷贝”名称推断。
 
 ## 已知环境限制
 

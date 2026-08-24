@@ -686,7 +686,113 @@ e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19
 未连接的 `ov13855-2@36` 日志与启动早期短暂的 `get remote sensor_sd failed` 不影响
 后续采集，均不应与本次修复混合处理。
 
-## 15. 新问题记录模板
+## 15. RGA 测试误报“未加载 bundle 内 librga”（已解决，2026-08-24）
+
+### 15.1 现象
+
+板端 `ldd` 明确显示：
+
+```text
+librga.so => .../rga-bundle/bin/../lib/librga.so
+```
+
+但黑盒脚本报告：
+
+```text
+FAIL: binary did not resolve the bundled librga.so
+```
+
+### 15.2 根因
+
+脚本把 `ldd` 文本与期望路径 `.../rga-bundle/lib/librga.so` 做字符串精确比较。
+`bin/../lib` 与 `lib` 指向同一文件，但字符串不同，导致测试误报；程序和动态库
+加载本身没有失败。
+
+### 15.3 修复与验证
+
+分别用 `readlink -f` 规范化 `ldd` 实际路径和期望路径，再比较绝对路径。提交：
+
+```text
+a8852cf24 test(rga): normalize bundled library path
+```
+
+修复后文件式和实时 RGA 黑盒测试均通过。该问题说明动态库验证必须比较规范化
+文件身份，不能只比较路径拼写。
+
+## 16. RKISP mainpath 格式漂移导致实时程序拒绝（已解决，2026-08-24）
+
+### 16.1 现象
+
+部署实时程序前回读 `/dev/video11`，发现格式恢复为：
+
+```text
+2112x1568 NV12
+stride=2112
+sizeimage=4967424
+```
+
+而实时 RGA 程序固定要求 1920x1080 NV12、stride 1920、size 3,110,400。
+
+### 16.2 根因
+
+V4L2 video node 格式是可变运行状态，重启、其他应用或先前测试都可能改变它。
+实时程序按设计只校验 capture 契约，不自动修改 sensor、subdev、crop 和 RKISP，
+因此会主动拒绝不匹配格式，而不是按错误 stride 复制。
+
+### 16.3 修复与验证
+
+每次实时验收前执行：
+
+```bash
+./configure_rkisp_1080p.sh
+v4l2-ctl -d /dev/video11 --get-fmt-video
+```
+
+确认 1920x1080 NV12、stride 1920、size 3,110,400 后再启动程序。配置脚本输出
+`CONFIGURATION_OK`，随后 copy/direct 均稳定处理 300 帧。
+
+程序不自动配置 media graph 是有意边界：配置失败与 capture/RGA 失败可以独立
+定位，避免一个工具同时改变过多状态。
+
+## 17. Direct-MMAP 不一定降低总 CPU 或 RGA 时间（结论修正，2026-08-25）
+
+### 17.1 现象
+
+Direct 确定移除了每帧 3,110,400-byte memcpy，但不同轮次的 CPU 结果不同：
+
+```text
+联合测试：copy 7.11%，direct 2.64%
+benchmark：copy 4.95%，direct 5.41%
+```
+
+benchmark 中 direct 用户态 CPU 更低，但 system CPU 和 RGA 平均时间高于 copy。
+
+### 17.2 原因与边界
+
+- Direct 通过 `importbuffer_virtualaddr` 使用驱动 MMAP 地址，不等于 DMA-BUF；
+- 移除用户态 memcpy 不保证内核映射、缓存或 RGA 调度开销同步下降；
+- 10 秒短测试会受到调度、缓存和频率状态波动影响；
+- 两种 RGA 路径都被 30 fps sensor 节奏限制，最终 FPS 相同。
+
+因此不能用“零拷贝”名称代替实测，也不能从单轮结果推断稳定 CPU 优势。
+
+### 17.3 正确验证方法
+
+同时记录：
+
+- 程序内部 getrusage user/system CPU；
+- `/usr/bin/time -v` 外部 CPU、elapsed 和最大 RSS；
+- copy/RGA 独立耗时；
+- FPS、timeout、sequence drop、PM 和内核 fault。
+
+实测可确认 Direct 消除 memcpy，并将 RSS 从 19,564 KB 降到 16,380 KB；总 CPU
+和 RGA 时间只能报告观测值与波动，不能承诺每轮更低。不需要变换时 bypass
+仍是资源最少的路径。
+
+板端最初缺少 `/usr/bin/time`，测试时安装 Ubuntu `time` 1.9；它只属于 benchmark
+工具，不是产品运行依赖。
+
+## 18. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

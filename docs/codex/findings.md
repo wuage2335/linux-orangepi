@@ -38,27 +38,46 @@
 - Camera dtsi `rk3588-orangepi-5-max-camera0.dtsi` 中 OV13850 默认 compatible 是 `ovti,ov13850`、I2C 地址 `0x10`、2-lane MIPI，默认 `status = "disabled"`；`rk3588-opi5ultra-cam*.dts` overlay 负责打开 DPHY/CSI/CIF/ISP/i2c/sensor 节点。
 - Windows `H:\Embedded\ov13850_driver\.external\linux-orangepi` 是 `stage2-fetch` 分支的 partial media 副本，包含 `ov13850_new.c`、`ov13850_regs.h`、`ov13850_modes.h`，Kconfig 名为 `VIDEO_OV13850_NEW`，与 WSL `main` 的 `ov13850_i2c_min.c` 不是同一实验形态。
 
-## 待确认问题
+## 环境限制结论
 
-- 当前 Codex 环境为什么无法直接访问 `\\wsl.localhost\Ubuntu-22.04\home\wuage2335\linux-orangepi`，以及为什么 `wsl.exe --list` 仍报告无可用发行版。
-- 后续若需要直接修改 WSL 项目，优先在权限允许时使用 UNC 路径；若当前 Codex 仍被拒绝，则需要用户确认是否切换到可访问 WSL 的终端/会话。
-- 离线 VHDX/ext4 解析脚本读取部分文件时返回全零，需要后续若要深读这些文件，最好在可运行 WSL 内直接使用 `rg/cat/git`。
+- 当前 Codex 已能通过 `wsl -d Ubuntu-22.04` 直接访问、修改和构建
+  `/home/wuage2335/linux-orangepi`；此前 UNC/WSL 拒绝属于历史沙盒权限状态，
+  不是当前阻塞。
+- Windows Explorer 仍可使用
+  `\\wsl.localhost\Ubuntu-22.04\home\wuage2335\linux-orangepi`。
+- 离线 VHDX/ext4 读取仅是历史 fallback，且曾出现部分文件全零；当前不得再用
+  它替代 WSL 内的 `rg/cat/git/make` 作为源码或构建证据。
 
-## 摄像头链路实施状态
+## 摄像头链路实施状态（2026-08-25）
 
-- 用户确认“基线验证”和“传感器与 DTS”两个阶段已经完成，后续不再重复安排。
-- 当前实施入口调整为 V4L2 sensor subdev 驱动完善，之后依次进入 ISP/RGA、MPP、低延迟推流和性能稳定性。
-- 阶段计划统一使用阶段编号，不再附带周或天等时间估算。
+- 阶段 0“基线验证”、阶段 1“传感器与 DTS”、阶段 2“V4L2 驱动完善”和
+  阶段 3“ISP/RGA”均已完成；当前进入阶段 4 MPP 硬件编码。
+- 学习驱动 `ov13850_i2c_min.c` 已完成 controls、runtime PM、双模式、
+  TRY/ACTIVE、stream lifecycle 和内建实机验证。
+- RKISP mainpath 已验证 1920x1080 NV12@30；RGA 文件、实时 copy、实时
+  direct-MMAP 均通过 300 帧验收，timeout/drop 为 0。
+- 三路径 benchmark 表明 bypass 资源最低；Direct 消除 memcpy 并降低 RSS，
+  但总 CPU/RGA 时间存在波动，不能仅凭“零拷贝”名称推断一定更快。
+- 当前按需图像变换只有 resize；旋转/色彩转换无业务需求，DMA-BUF 留到后续
+  低延迟优化。
+- 阶段计划继续只使用阶段编号，不附带周或天等时间估算。
 
-## `ov13850_i2c_min.c` 阶段 2 审查
+## `ov13850_i2c_min.c` 阶段 2 最终结论
 
-- 2026-08-06 的未验证 2A 脚手架已加入 V4L2 control/runtime-PM 头文件、control 状态字段、曝光/增益/VTS/测试图常量及菜单数据，并移除了 `i2c:ovti,ov13850` alias。它仍未实现 control 回调、control handler 初始化或 runtime PM，不能加载或绑定验证。
-- 该学习驱动已具备：I2C 多字节读/单字节写、寄存器表写入、R2A revision 选择、global/mode 初始化、上电与下电、芯片 ID 检查、sysfs 寄存器调试、单 pad V4L2 Subdev、固定 RAW10 格式和异步 sensor 注册。
-- 历史源码级阻塞（`struct ov13850_mode` 缺少 `max_fps`，以及 video ops 使用错误的 `ov13850_min_g_mbus_config` 名称）已在当前源码中修正为 `max_fps` 成员与 `ov13850_min_get_mbus_config`。这一判断仅来自源码阅读；独立 `O=` 构建尚未在当前阶段执行。
-- 存在高优先级 clientdata 生命周期问题：probe 前段把 `i2c_set_clientdata(client, cam)` 设为私有结构体，但后续 `v4l2_i2c_subdev_init()` 会按 V4L2 I2C Subdev 约定将 clientdata 设为 `struct v4l2_subdev *`。当前 sysfs 回调和 `remove()` 仍把 `i2c_get_clientdata()` 直接当成 `struct ov13850_min *`，会得到错误对象地址。应统一采用“取出 subdev，再通过 `to_ov13850_min(sd)` 回到私有结构体”的正式驱动模式，并在 V4L2 初始化完成后再暴露依赖它的 sysfs 接口。
-- 当前源码已经有最小 `.s_stream`，但它尚未持有 runtime-PM 引用，且需要按已确认设计整理为 global init -> mode -> control setup -> `0x0100` 的标准路径。
-- 当前已有 `v4l2_ctrl_handler` 的存储字段及常量/菜单数据，但仍缺少 link frequency、pixel rate、HBLANK、VBLANK、曝光、模拟增益和测试图的 handler 初始化与 `.s_ctrl` 写寄存器逻辑。
-- 当前没有 runtime PM；probe 成功后 Sensor 长期保持上电。后续加入 PM 时，sysfs 寄存器访问也必须持有 PM 引用，不能在掉电状态直接 I2C 访问。
-- 当前 `set_fmt/get_fmt` 仍是单一固定模式，未区分 TRY 与 ACTIVE；已有 frame-interval 枚举雏形，但仍缺少双模式数组、最佳匹配及切换模式时的 control 范围更新。
-- 其他后续完善项包括 pinctrl default/sleep、时钟实际频率检查、power_on 失败路径回滚、streaming 状态、Rockchip module info，以及收敛大量 `dev_info` 和原始 sysfs 写寄存器接口。
-- 模式的 2112x1568、HTS/VTS、30 fps 与 120 MHz pixel rate 常量均直接继承自同仓库正式驱动；不能仅凭通用 `pixel_rate/(HTS*VTS)` 公式断定帧率错误，需结合 OV13850 的时序单位和实测验证。
+- 学习 binding 固定为 `learning,ov13850-i2c`，不会抢占正式
+  `ovti,ov13850` 驱动。
+- `v4l2_i2c_subdev_init()` 后 clientdata 为 `struct v4l2_subdev *`；当前通过
+  `ov13850_min_from_client()` 安全回到私有结构，历史错误转换已修复。
+- `s_stream` 顺序为 global init -> mode -> control replay -> `0x0100=1`，并在
+  完整 streaming 生命周期持有 runtime-PM 引用。
+- 已实现 LINK_FREQ、PIXEL_RATE、HBLANK、VBLANK、曝光、模拟增益和测试图；
+  VBLANK 会同步更新曝光上限。
+- 已实现 2112x1568@30 与 4224x3136@7.5 两种 RAW10 模式、TRY/ACTIVE、最佳
+  匹配和切换模式后的 control 范围更新。
+- 学习驱动必须内建：模块晚加载会错过 Rockchip CIF/ISP async notifier 组图
+  窗口。内建后 media graph、双模式采集和重复启停通过。
+- CIF STREAMON 的 ENOMEM 根因是 `enum_frame_interval()` 拒绝 `code=0`，导致
+  dummy buffer size 0；仅在非零 code 时校验后修复。
+- 实测 2112x1568 为 29.97 fps、4224x3136 为 7.51 fps；停流后 PM 为
+  suspended/usage 0，无新增 MIPI fault。`v4l2-compliance` 为 42/43，唯一遗留
+  是与正式参考驱动一致的 control event 订阅缺失。
