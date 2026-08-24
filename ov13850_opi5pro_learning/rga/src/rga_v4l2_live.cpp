@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include "im2d.hpp"
@@ -61,6 +63,11 @@ constexpr unsigned int kProcessFrames = 300;
 constexpr int kPollTimeoutMs = 2000;
 constexpr int kRgaFormat = RK_FORMAT_YCbCr_420_SP;
 
+enum class InputMode {
+	Copy,
+	Direct,
+};
+
 static_assert(kSrcSize ==
 	static_cast<std::size_t>(kSrcWidth) * kSrcHeight * 3 / 2);
 static_assert(kDstSize ==
@@ -93,6 +100,27 @@ double elapsed_us(const SteadyClock::time_point &start,
 	return std::chrono::duration<double, std::micro>(end - start).count();
 }
 
+double timeval_ms(const timeval &value)
+{
+	return static_cast<double>(value.tv_sec) * 1000.0 +
+	       static_cast<double>(value.tv_usec) / 1000.0;
+}
+
+struct CpuUsageSnapshot {
+	double user_ms;
+	double system_ms;
+};
+
+CpuUsageSnapshot read_cpu_usage()
+{
+	rusage usage = {};
+
+	if (getrusage(RUSAGE_SELF, &usage) < 0)
+		throw system_error("getrusage");
+
+	return {timeval_ms(usage.ru_utime), timeval_ms(usage.ru_stime)};
+}
+
 struct CapturedFrame {
 	/*
 	 * CapturedFrame 只在 DQBUF 到下一次 QBUF 之间有效。data 指向驱动映射的
@@ -108,6 +136,11 @@ struct CapturedFrame {
 struct MappedBuffer {
 	void *address = MAP_FAILED;
 	std::size_t length = 0;
+};
+
+struct MappedBufferView {
+	void *address;
+	std::size_t length;
 };
 
 class VideoCapture {
@@ -245,6 +278,17 @@ public:
 
 		if (xioctl(fd_, VIDIOC_QBUF, &buffer) < 0)
 			throw system_error("VIDIOC_QBUF");
+	}
+
+	std::vector<MappedBufferView> mapped_views() const
+	{
+		std::vector<MappedBufferView> views;
+
+		views.reserve(buffers_.size());
+		for (const MappedBuffer &buffer : buffers_)
+			views.push_back({buffer.address, buffer.length});
+
+		return views;
 	}
 
 private:
@@ -399,9 +443,9 @@ private:
 	rga_buffer_handle_t handle_ = 0;
 };
 
-class RgaResizer {
+class CopyRgaResizer {
 public:
-	RgaResizer()
+	CopyRgaResizer()
 		: source_(kSrcSize), output_(kDstSize, 0),
 		  source_handle_(source_.data(), source_.size()),
 		  output_handle_(output_.data(), output_.size())
@@ -454,6 +498,74 @@ private:
 	rga_buffer_t output_buffer_ = {};
 };
 
+class DirectRgaResizer {
+public:
+	explicit DirectRgaResizer(
+		const std::vector<MappedBufferView> &mapped_views)
+		: output_(kDstSize, 0),
+		  output_handle_(output_.data(), output_.size())
+	{
+		if (mapped_views.empty())
+			throw std::runtime_error("direct mode has no MMAP buffers");
+		if (!output_handle_.valid())
+			throw std::runtime_error("direct output import failed");
+
+		output_buffer_ = wrapbuffer_handle(
+			output_handle_.get(), kDstWidth, kDstHeight, kRgaFormat);
+		source_handles_.reserve(mapped_views.size());
+		source_buffers_.reserve(mapped_views.size());
+
+		for (const MappedBufferView &view : mapped_views) {
+			if (view.address == nullptr || view.address == MAP_FAILED ||
+			    view.length < kSrcSize)
+				throw std::runtime_error("invalid direct MMAP view");
+
+			auto handle = std::make_unique<ImportedBuffer>(
+				view.address, kSrcSize);
+			if (!handle->valid())
+				throw std::runtime_error("direct source import failed");
+
+			rga_buffer_t source_buffer = wrapbuffer_handle(
+				handle->get(), kSrcWidth, kSrcHeight, kRgaFormat);
+			im_rect empty = {};
+			const IM_STATUS status =
+				imcheck(source_buffer, output_buffer_, empty, empty);
+			if (status != IM_STATUS_NOERROR)
+				throw std::runtime_error(
+					std::string("direct imcheck failed: ") +
+					imStrError(status));
+
+			source_buffers_.push_back(source_buffer);
+			source_handles_.push_back(std::move(handle));
+		}
+	}
+
+	const std::vector<unsigned char> &output_data() const
+	{
+		return output_;
+	}
+
+	void resize(unsigned int capture_index)
+	{
+		if (capture_index >= source_buffers_.size())
+			throw std::runtime_error("direct capture index is out of range");
+
+		const IM_STATUS status =
+			imresize(source_buffers_[capture_index], output_buffer_);
+		if (status != IM_STATUS_SUCCESS)
+			throw std::runtime_error(
+				std::string("direct imresize failed: ") +
+				imStrError(status));
+	}
+
+private:
+	std::vector<unsigned char> output_;
+	ImportedBuffer output_handle_;
+	rga_buffer_t output_buffer_ = {};
+	std::vector<std::unique_ptr<ImportedBuffer>> source_handles_;
+	std::vector<rga_buffer_t> source_buffers_;
+};
+
 void write_output(const char *path,
 		  const std::vector<unsigned char> &data)
 {
@@ -478,20 +590,41 @@ void write_output(const char *path,
 
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
+	InputMode mode;
+	const char *device;
+	const char *output_path;
+
+	if (argc == 3) {
+		mode = InputMode::Copy;
+		device = argv[1];
+		output_path = argv[2];
+	} else if (argc == 4 && std::strcmp(argv[1], "--direct") == 0) {
+		mode = InputMode::Direct;
+		device = argv[2];
+		output_path = argv[3];
+	} else {
 		std::cerr << "ERROR: usage: " << argv[0]
-			  << " <video-device> <last-output-1280x720.nv12>\n";
+			  << " [--direct] <video-device>"
+			  << " <last-output-1280x720.nv12>\n";
 		return 2;
 	}
 
 	/* 删除旧结果；本次任一步失败时不能让上次输出冒充新结果。 */
-	std::remove(argv[2]);
+	std::remove(output_path);
 	unsigned int timeouts = 0;
 
 	try {
-		/* capture 与 resizer 各自拥有资源，main 只负责编排数据流。 */
-		VideoCapture capture(argv[1]);
-		RgaResizer resizer;
+		/* capture 必须先构造，保证 direct handles 在 munmap 前析构。 */
+		VideoCapture capture(device);
+		std::unique_ptr<CopyRgaResizer> copy_resizer;
+		std::unique_ptr<DirectRgaResizer> direct_resizer;
+
+		if (mode == InputMode::Copy)
+			copy_resizer = std::make_unique<CopyRgaResizer>();
+		else
+			direct_resizer = std::make_unique<DirectRgaResizer>(
+				capture.mapped_views());
+
 		capture.start();
 
 		/* 启动帧只做 DQ/Q，让曝光、ISP 和队列进入稳定状态，不计入性能。 */
@@ -505,6 +638,7 @@ int main(int argc, char **argv)
 		std::uint64_t dropped = 0;
 		std::uint32_t previous_sequence = 0;
 		bool have_previous_sequence = false;
+		const CpuUsageSnapshot cpu_before = read_cpu_usage();
 		const auto loop_start = SteadyClock::now();
 
 		for (unsigned int i = 0; i < kProcessFrames; ++i) {
@@ -525,28 +659,39 @@ int main(int argc, char **argv)
 			previous_sequence = frame.sequence;
 			have_previous_sequence = true;
 
-			/*
-			 * 计时显式 copy。复制完成后立即 QBUF，随后 RGA 访问独立 source_，
-			 * 不再持有 capture buffer，因此驱动可并行采集下一帧。
-			 */
-			const auto copy_start = SteadyClock::now();
-			std::memcpy(resizer.source_data(), frame.data, kSrcSize);
-			const auto copy_end = SteadyClock::now();
-			copy_total_us += elapsed_us(copy_start, copy_end);
+			if (mode == InputMode::Copy) {
+				/* copy 后立即 QBUF，RGA 访问独立 source_。 */
+				const auto copy_start = SteadyClock::now();
+				std::memcpy(copy_resizer->source_data(),
+					    frame.data, kSrcSize);
+				const auto copy_end = SteadyClock::now();
+				copy_total_us += elapsed_us(copy_start, copy_end);
 
-			capture.requeue(frame.index);
+				capture.requeue(frame.index);
 
-			/* RGA 单独计时，便于后续与 direct-MMAP 版本公平比较。 */
-			const auto rga_start = SteadyClock::now();
-			resizer.resize();
-			const auto rga_end = SteadyClock::now();
-			rga_total_us += elapsed_us(rga_start, rga_end);
+				const auto rga_start = SteadyClock::now();
+				copy_resizer->resize();
+				const auto rga_end = SteadyClock::now();
+				rga_total_us += elapsed_us(rga_start, rga_end);
+			} else {
+				/* direct RGA 完成前不能 QBUF，避免驱动覆盖源帧。 */
+				const auto rga_start = SteadyClock::now();
+				direct_resizer->resize(frame.index);
+				const auto rga_end = SteadyClock::now();
+				rga_total_us += elapsed_us(rga_start, rga_end);
+
+				capture.requeue(frame.index);
+			}
 		}
 
 		const auto loop_end = SteadyClock::now();
+		const CpuUsageSnapshot cpu_after = read_cpu_usage();
 		/* 先停 capture、归还上游 PM 引用，再把循环外的最后一帧写盘。 */
 		capture.stop();
-		write_output(argv[2], resizer.output_data());
+		if (mode == InputMode::Copy)
+			write_output(output_path, copy_resizer->output_data());
+		else
+			write_output(output_path, direct_resizer->output_data());
 
 		const double loop_total_s =
 			std::chrono::duration<double>(loop_end - loop_start).count();
@@ -558,10 +703,19 @@ int main(int argc, char **argv)
 		 */
 		const double capture_process_fps =
 			loop_total_s > 0.0 ? kProcessFrames / loop_total_s : 0.0;
+		const double cpu_user_ms = cpu_after.user_ms - cpu_before.user_ms;
+		const double cpu_system_ms =
+			cpu_after.system_ms - cpu_before.system_ms;
+		const double process_cpu_percent =
+			loop_total_s > 0.0 ?
+			(cpu_user_ms + cpu_system_ms) /
+				(loop_total_s * 1000.0) * 100.0 : 0.0;
 		const char *version = querystring(RGA_VERSION);
 
 		std::cout << "librga="
 			  << (version != nullptr ? version : "unknown") << '\n';
+		std::cout << "mode="
+			  << (mode == InputMode::Copy ? "copy" : "direct") << '\n';
 		std::cout << "input=1920x1080 NV12 bytes=" << kSrcSize << '\n';
 		std::cout << "output=1280x720 NV12 bytes=" << kDstSize << '\n';
 		std::cout << "pre_skipped=" << kSkipFrames
@@ -574,11 +728,14 @@ int main(int argc, char **argv)
 			  << "rga_total_us=" << rga_total_us
 			  << " rga_average_us=" << rga_average_us << '\n'
 			  << "loop_total_s=" << loop_total_s
-			  << " capture_process_fps=" << capture_process_fps << '\n';
+			  << " capture_process_fps=" << capture_process_fps << '\n'
+			  << "cpu_user_ms=" << cpu_user_ms
+			  << " cpu_system_ms=" << cpu_system_ms
+			  << " process_cpu_percent=" << process_cpu_percent << '\n';
 		std::cout << "RGA_V4L2_LIVE_OK\n";
 	} catch (const std::exception &error) {
 		/* 栈展开先触发 RAII 清理，再统一删除输出并转成稳定的 ERROR: 契约。 */
-		std::remove(argv[2]);
+		std::remove(output_path);
 		std::cerr << "ERROR: " << error.what() << '\n';
 		return 1;
 	}
