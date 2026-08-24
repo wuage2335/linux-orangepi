@@ -6,6 +6,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MPP_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 SDK="$MPP_ROOT/build/sdk"
 BUNDLE="$MPP_ROOT/build/bundle/official-mpp"
+APP_BIN="$MPP_ROOT/build/app/nv12_mpp_encoder"
 
 fail()
 {
@@ -22,6 +23,10 @@ cp "$SDK/bin/mpi_enc_test" "$BUNDLE/bin/"
 cp "$SDK/bin/mpp_info_test" "$BUNDLE/bin/"
 cp -a "$SDK/lib/librockchip_mpp.so"* "$BUNDLE/lib/"
 cp "$MPP_ROOT/ORIGIN.md" "$BUNDLE/share/ORIGIN.md"
+
+if [[ -x $APP_BIN ]]; then
+    cp "$APP_BIN" "$BUNDLE/bin/nv12_mpp_encoder"
+fi
 
 rm -f "$BUNDLE/SHA256SUMS"
 (
