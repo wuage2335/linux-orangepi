@@ -1,6 +1,6 @@
 # RK3588 摄像头链路任务交接文档
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-21（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-24（Asia/Shanghai）。
 
 ## 0. 协作约束
 
@@ -12,8 +12,9 @@
 ## 1. 当前状态
 
 - 项目：Orange Pi 5 Pro（RK3588S）上的 OV13850 CAM2 摄像头链路。
-- 项目阶段：阶段 2“V4L2 驱动完善”已完成核心实机验收；下一阶段为阶段 3
-  “ISP 与 RGA 图像处理”。
+- 项目阶段：阶段 2“V4L2 驱动完善”已完成实机验收；当前为阶段 3“ISP 与
+  RGA 图像处理”。RKISP 1920x1080 NV12 基线和文件式 RGA resize 已通过，
+  下一项为 V4L2 实时帧接入 RGA。
 - 正式交付/参考驱动：`drivers/media/i2c/ov13850.c`。
 - 当前学习实现：`drivers/media/i2c/ov13850_i2c_min.c`，仅能绑定
   `learning,ov13850-i2c`，不得与正式 `ovti,ov13850` binding 竞争。
@@ -22,6 +23,10 @@
 - 当前内核 release：`6.1.99-opi5pro-livecfg-baseline`；学习驱动必须为
   `CONFIG_VIDEO_OV13850_I2C_MIN=y`。作为模块晚加载时会错过 Rockchip CIF/ISP
   async notifier 的组图窗口，虽然 I2C probe 成功，但不会生成 sensor subdev。
+- 阶段 3 已验证 `2112x1568 RAW10 -> RKISP -> 1920x1080 NV12@30`，并完成
+  `1920x1080 NV12 -> RGA imresize -> 1280x720 NV12` 文件实验。RGA 使用官方
+  librga 1.10.6_[3]，板端 multicore driver v1.3.7；详细证据见
+  `docs/codex/rga_nv12_file_resize_validation.md`。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前分支：`main`；阶段 2 学习驱动源码提交为
@@ -104,10 +109,26 @@
 5. `v4l2-compliance` 42/43；唯一失败为 control event 订阅。正式参考驱动也未实现
    该接口，当前记为非阻塞标准化遗留项。
 
-下一步从阶段 3 开始：区分 CIF RAW 旁路与 RKISP 输出，建立 RAW -> ISP -> NV12
-路径，再按需接入 RGA。`ov13855-2@36` 仍是独立 DT 清理项，不得混入后续工作。
+## 6. 阶段 3 ISP/RGA 验收结果（2026-08-24）
 
-## 6. 文档维护
+1. RKISP mainpath 已稳定输出 1920x1080 NV12，单帧 3,110,400 字节，持续约
+   30.05 fps；中心裁剪 2112x1188 后按 10/11 等比例缩放，无几何变形。
+2. 项目内固定官方 librga API 1.10.6_[3]，提交
+   `2b32edcb97b601b25683e2941d888c8515da6d55`，aarch64 动态库通过
+   `$ORIGIN/../lib` 从部署包加载。板端 RGA multicore driver 为 v1.3.7。
+3. 文件式 `1920x1080 NV12 -> 1280x720 NV12` 黑盒测试通过，输出
+   1,382,400 字节，SHA-256 为
+   `2f1d2bc1fbbe822ade7536d39f198b9affe4bf45fbd898b59735f0041a5d0deb`。
+4. 100 次同步缩放的观测平均耗时为 1.63-2.45 ms，纯缩放吞吐约 408-614
+   次/秒；该数据不包含文件 I/O、V4L2、sensor 或 ISP，不能当作端到端延迟。
+5. 输出 Y/UV 平面尺寸和数值范围有效，重复输出一致；本次运行无新增
+   RGA/MMU/IOMMU fault。
+
+下一步仍属于阶段 3：单独设计并实现 V4L2 实时帧接入 RGA，再比较绕过 RGA
+与启用 RGA 时的帧率、CPU 占用和稳定性。DMA-BUF 零拷贝留到低延迟优化阶段。
+`ov13855-2@36` 仍是独立 DT 清理项，不得混入后续工作。
+
+## 7. 文档维护
 
 - 重要状态同时更新本文件、`task_plan.md` 与 `progress.md`。
 - 构建/启动/部署问题追加到 `orangepi5pro-kernel-troubleshooting.md`。
