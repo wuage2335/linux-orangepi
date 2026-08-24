@@ -10,6 +10,7 @@ set -euo pipefail
 BUNDLE=$(cd "$1" && pwd)
 DEVICE=$2
 OUTPUT=$3
+DIRECT_OUTPUT="${OUTPUT}.direct.nv12"
 BIN="$BUNDLE/bin/rga_v4l2_live"
 LIB="$BUNDLE/lib/librga.so"
 TEST_ROOT=$(mktemp -d)
@@ -61,11 +62,14 @@ RESOLVED_LIB=$(readlink -f "$RESOLVED_LIB")
     fail "binary resolved librga.so to $RESOLVED_LIB, expected $EXPECTED_LIB"
 
 expect_failure no_args
+expect_failure direct_no_args --direct
 expect_failure invalid_device /dev/null "$TEST_ROOT/invalid-output.nv12"
+expect_failure direct_invalid_device \
+    --direct /dev/null "$TEST_ROOT/direct-invalid-output.nv12"
 [[ ! -e $TEST_ROOT/invalid-output.nv12 ]] ||
     fail 'invalid-device failure left an output file'
 
-rm -f "$OUTPUT"
+rm -f "$OUTPUT" "$DIRECT_OUTPUT"
 
 "$BIN" "$DEVICE" "$OUTPUT" |
     tee "$TEST_ROOT/live.log"
@@ -89,6 +93,8 @@ END {
 
 grep -Fq 'librga=' "$TEST_ROOT/live.log" ||
     fail 'missing librga version'
+grep -Fq 'mode=copy' "$TEST_ROOT/live.log" ||
+    fail 'copy run did not report mode=copy'
 grep -Fq 'pre_skipped=3 processed=300 timeouts=0 dropped=0' \
     "$TEST_ROOT/live.log" ||
     fail 'unexpected frame counters'
@@ -104,8 +110,56 @@ grep -Eq 'loop_total_s=[0-9]+([.][0-9]+)?' "$TEST_ROOT/live.log" ||
     fail 'missing loop total time'
 grep -Eq 'capture_process_fps=[0-9]+([.][0-9]+)?' "$TEST_ROOT/live.log" ||
     fail 'missing capture/process FPS'
+grep -Eq 'cpu_user_ms=[0-9]+([.][0-9]+)?' "$TEST_ROOT/live.log" ||
+    fail 'missing user CPU time'
+grep -Eq 'cpu_system_ms=[0-9]+([.][0-9]+)?' "$TEST_ROOT/live.log" ||
+    fail 'missing system CPU time'
+grep -Eq 'process_cpu_percent=[0-9]+([.][0-9]+)?' "$TEST_ROOT/live.log" ||
+    fail 'missing process CPU percent'
 grep -Fq 'RGA_V4L2_LIVE_OK' "$TEST_ROOT/live.log" ||
     fail 'missing live success marker'
 
-sha256sum "$OUTPUT"
-printf 'PASS: realtime V4L2 RGA copy-path tests\n'
+"$BIN" --direct "$DEVICE" "$DIRECT_OUTPUT" |
+    tee "$TEST_ROOT/direct.log"
+
+[[ -f $DIRECT_OUTPUT ]] || fail 'direct run did not create output'
+[[ $(stat -c '%s' "$DIRECT_OUTPUT") -eq 1382400 ]] ||
+    fail 'direct output size is not 1382400 bytes'
+
+od -An -tu1 -v "$DIRECT_OUTPUT" |
+awk '
+{
+    for (i = 1; i <= NF; i++) {
+        if (($i + 0) != 0)
+            nonzero = 1
+    }
+}
+END {
+    exit nonzero ? 0 : 1
+}
+' || fail 'direct output is all zero'
+
+grep -Fq 'mode=direct' "$TEST_ROOT/direct.log" ||
+    fail 'direct run did not report mode=direct'
+grep -Fq 'pre_skipped=3 processed=300 timeouts=0 dropped=0' \
+    "$TEST_ROOT/direct.log" ||
+    fail 'unexpected direct frame counters'
+grep -Fq 'copy_total_us=0.00 copy_average_us=0.00' \
+    "$TEST_ROOT/direct.log" ||
+    fail 'direct run reported nonzero copy time'
+grep -Eq 'rga_average_us=[0-9]+([.][0-9]+)?' "$TEST_ROOT/direct.log" ||
+    fail 'missing direct RGA average time'
+grep -Eq 'capture_process_fps=[0-9]+([.][0-9]+)?' "$TEST_ROOT/direct.log" ||
+    fail 'missing direct capture/process FPS'
+grep -Eq 'cpu_user_ms=[0-9]+([.][0-9]+)?' "$TEST_ROOT/direct.log" ||
+    fail 'missing direct user CPU time'
+grep -Eq 'cpu_system_ms=[0-9]+([.][0-9]+)?' "$TEST_ROOT/direct.log" ||
+    fail 'missing direct system CPU time'
+grep -Eq 'process_cpu_percent=[0-9]+([.][0-9]+)?' \
+    "$TEST_ROOT/direct.log" ||
+    fail 'missing direct process CPU percent'
+grep -Fq 'RGA_V4L2_LIVE_OK' "$TEST_ROOT/direct.log" ||
+    fail 'missing direct success marker'
+
+sha256sum "$OUTPUT" "$DIRECT_OUTPUT"
+printf 'PASS: realtime V4L2 RGA copy/direct tests\n'
