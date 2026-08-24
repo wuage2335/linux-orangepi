@@ -27,6 +27,9 @@
   `1920x1080 NV12 -> RGA imresize -> 1280x720 NV12` 文件实验。RGA 使用官方
   librga 1.10.6_[3]，板端 multicore driver v1.3.7；详细证据见
   `docs/codex/rga_nv12_file_resize_validation.md`。
+- 阶段 3 第一版实时 copy path 也已通过：`/dev/video11 -> V4L2 MMAP ->
+  memcpy -> QBUF -> RGA` 连续处理 300 帧，30.04 fps、0 timeout、0 drop；
+  详细证据见 `docs/codex/rga_v4l2_live_validation.md`。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前分支：`main`；阶段 2 学习驱动源码提交为
@@ -123,9 +126,17 @@
    次/秒；该数据不包含文件 I/O、V4L2、sensor 或 ISP，不能当作端到端延迟。
 5. 输出 Y/UV 平面尺寸和数值范围有效，重复输出一致；本次运行无新增
    RGA/MMU/IOMMU fault。
+6. 实时 copy path 预丢弃 3 帧后处理 300 帧，显式 memcpy 平均 0.731 ms，
+   同步 RGA 平均 2.593 ms，完整循环 30.04 fps；V4L2 sequence drop 和 poll
+   timeout 都为 0。
+7. 实时输出 1280x720 NV12 为 1,382,400 字节，SHA-256 为
+   `5b11f6f24b6469f361821397ba986f43bb450d8a2965a2f9d91fcd4b4e26f68b`；
+   退出后 sensor PM 为 suspended/usage 0，新增日志无 CIF/ISP/RGA/MMU/IOMMU
+   fault、timeout 或 overflow。
 
-下一步仍属于阶段 3：单独设计并实现 V4L2 实时帧接入 RGA，再比较绕过 RGA
-与启用 RGA 时的帧率、CPU 占用和稳定性。DMA-BUF 零拷贝留到低延迟优化阶段。
+下一步仍属于阶段 3：在相同 3+300 帧契约下设计 direct-MMAP import 版本，
+比较显式 copy 与直接导入路径的 CPU 占用和处理时延。DMA-BUF 零拷贝留到
+低延迟优化阶段。
 `ov13855-2@36` 仍是独立 DT 清理项，不得混入后续工作。
 
 ## 7. 文档维护

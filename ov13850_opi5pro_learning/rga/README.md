@@ -209,10 +209,11 @@ bash tests/test_rga_nv12_resize.sh \
 - 文件式 RGA 黑盒测试已在板端转为 GREEN，实际 imresize、输出内容、性能和
   fault 检查均通过；详细证据见
   `docs/codex/rga_nv12_file_resize_validation.md`；
-- 实时程序及其测试已完成 WSL aarch64 构建/语法验证，板端 300 帧验收尚未
-  执行。
+- 实时 copy path 已完成板端 300 帧验收：30.04 fps、0 timeout、0 drop，退出
+  后 sensor PM 为 suspended/usage 0；详细证据见
+  `docs/codex/rga_v4l2_live_validation.md`。
 
 尚未宣称完成：
 
-- V4L2 实时帧接入 RGA；
+- direct-MMAP import 与显式 memcpy 路径的 CPU/时延对比；
 - DMA-BUF 零拷贝和端到端延迟。
