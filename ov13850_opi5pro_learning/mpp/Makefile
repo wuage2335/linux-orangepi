@@ -7,6 +7,9 @@ APP_BUILD := $(ROOT)/build/app
 BUNDLE := $(ROOT)/build/bundle/official-mpp
 SOURCE := $(ROOT)/src/nv12_mpp_encoder.cpp
 BIN := $(APP_BUILD)/nv12_mpp_encoder
+LIVE_SOURCE := $(ROOT)/src/v4l2_mpp_encoder.cpp
+LIVE_BIN := $(APP_BUILD)/v4l2_mpp_encoder
+CORE_HEADER := $(ROOT)/src/mpp_encoder_core.hpp
 
 CPPFLAGS += -I$(SDK)/include/rockchip
 CXXFLAGS += -O2 -g -Wall -Wextra -Werror -std=gnu++17
@@ -21,11 +24,15 @@ all: bundle
 sdk:
 	$(ROOT)/scripts/fetch_build_mpp.sh
 
-$(BIN): $(SOURCE) | sdk
+$(BIN): $(SOURCE) $(CORE_HEADER) | sdk
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(LDFLAGS) $(LDLIBS) -o $@
 
-bundle: $(BIN)
+$(LIVE_BIN): $(LIVE_SOURCE) $(CORE_HEADER) | sdk
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(LDFLAGS) $(LDLIBS) -o $@
+
+bundle: $(BIN) $(LIVE_BIN)
 	$(ROOT)/scripts/package_mpp_bundle.sh
 
 clean:
