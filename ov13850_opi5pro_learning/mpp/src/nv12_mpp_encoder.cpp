@@ -13,6 +13,12 @@
 
 namespace {
 
+/*
+ * 文件编码前端用于先隔离验证 MPP 本身：输入是一帧 1920x1080 NV12，程序
+ * 按指定次数重复提交并输出 H.264/H.265 Annex-B 裸流。它刻意不接 V4L2，
+ * 因而编码失败时可以把问题限定在 MPP、参数或输入格式，而不是摄像头链路。
+ */
+
 using namespace camera_mpp;
 
 int parse_positive(const char *text, const char *option)
@@ -121,6 +127,7 @@ int main(int argc, char **argv)
 			throw std::runtime_error("cannot create output bitstream file");
 
 		MppEncoder encoder(command.config);
+		/* 静态文件只需装载一次；随后重复提交同一 MPP 内部缓冲区。 */
 		encoder.load_nv12(input.data(), input.size());
 		EncoderStats stats;
 		encoder.write_header(output, stats);
@@ -128,6 +135,7 @@ int main(int argc, char **argv)
 		const auto start = std::chrono::steady_clock::now();
 		int frames_out = 0;
 		for (int index = 0; index < command.frames; ++index) {
+			/* request-idr 用于验证运行中请求关键帧的控制路径。 */
 			if (index == command.request_idr)
 				encoder.request_idr();
 			const bool eos = encoder.encode_frame(

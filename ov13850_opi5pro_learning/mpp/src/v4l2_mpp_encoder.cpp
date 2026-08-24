@@ -23,6 +23,14 @@
 
 namespace {
 
+/*
+ * 实时前端连接 RKISP mainpath 与 MPP：
+ *   copy   : V4L2 MMAP -> CPU 逐行复制 -> MPP 内部 DRM buffer；
+ *   dmabuf : V4L2 MMAP/EXPBUF -> MPP 导入同一 DMA-BUF。
+ * 两条路径使用同一编码核心和 300 帧验收窗口，以便比较搬运成本而不是比较
+ * 两套编码器。当前工具固定接收已配置好的 1920x1080 NV12 /dev/video11。
+ */
+
 using namespace camera_mpp;
 using Clock = std::chrono::steady_clock;
 
@@ -53,6 +61,10 @@ double elapsed_us(const Clock::time_point &start, const Clock::time_point &end)
 }
 
 struct MappedBuffer {
+	/*
+	 * address 供 copy 路径读取；export_fd 和 mpp_buffer 只在 DMA-BUF 路径
+	 * 使用。销毁顺序必须先释放 MPP import，再关闭 fd，最后解除 mmap。
+	 */
 	void *address = MAP_FAILED;
 	std::size_t length = 0;
 	int export_fd = -1;
@@ -129,6 +141,7 @@ public:
 		if (planes[0].data_offset != 0 || planes[0].bytesused < kInputSize)
 			throw std::runtime_error("invalid V4L2 NV12 plane layout");
 
+		/* 返回 index 而不立即 QBUF；调用方决定何时已不再使用该帧。 */
 		return {buffer.index,
 			static_cast<const unsigned char *>(buffers_[buffer.index].address),
 			buffer.sequence};
@@ -219,6 +232,10 @@ private:
 			MappedBuffer &stored = buffers_.back();
 
 			if (export_dmabuf) {
+				/*
+				 * EXPBUF 不复制像素，只为同一个 V4L2 缓冲区取得可跨
+				 * 子系统共享的 fd；MPP_BUFFER_TYPE_EXT_DMA 再导入该 fd。
+				 */
 				v4l2_exportbuffer export_buffer = {};
 				export_buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 				export_buffer.index = index;
@@ -284,6 +301,11 @@ int main(int argc, char **argv)
 
 	try {
 		EncoderConfig config;
+		/*
+		 * 关键布局差异：copy 目标由我们按 1088 行构造；V4L2 导出的
+		 * 单平面 NV12 的 UV 实际紧跟在第 1080 行后。DMA-BUF 若错误声明
+		 * 为 1088，会让 MPP 从错误位置读取 UV，虽然编码调用仍可能成功。
+		 */
 		config.ver_stride = use_dmabuf ? kHeight : kVerStride;
 		std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
 		if (!output)
@@ -320,6 +342,7 @@ int main(int argc, char **argv)
 			have_previous = true;
 
 			if (!use_dmabuf) {
+				/* copy 完成后 V4L2 原 buffer 已无引用，可立即归还采集队列。 */
 				const auto copy_start = Clock::now();
 				encoder.load_nv12(frame.data, kInputSize);
 				const auto copy_end = Clock::now();
@@ -340,6 +363,7 @@ int main(int argc, char **argv)
 			const auto mpp_end = Clock::now();
 			mpp_total_us += elapsed_us(mpp_start, mpp_end);
 			if (use_dmabuf)
+				/* MPP 阻塞取回 packet 后才归还，避免 ISP 覆盖正在编码的帧。 */
 				capture.requeue(frame.index);
 			if (index == kFrames - 1 && !eos)
 				throw std::runtime_error("last packet did not carry EOS");

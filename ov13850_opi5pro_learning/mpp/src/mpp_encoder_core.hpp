@@ -17,6 +17,15 @@
 
 namespace camera_mpp {
 
+/*
+ * Stage 4 的公共编码核心。
+ *
+ * 两个前端共享这里的编码策略：文件前端把紧凑 NV12 复制到 MPP 内部缓冲区，
+ * 实时前端既可走相同 copy 路径，也可把 V4L2 导出的 DMA-BUF 直接交给 MPP。
+ * 这样可以只改变输入缓冲区来源，在完全相同的码控、GOP 和 packet 流程下比较
+ * copy 与 DMA-BUF，避免把不同编码参数误判成零拷贝带来的差异。
+ */
+
 constexpr int kWidth = 1920;
 constexpr int kHeight = 1080;
 constexpr int kHorStride = 1920;
@@ -89,6 +98,11 @@ public:
 	MppEncoder(const MppEncoder &) = delete;
 	MppEncoder &operator=(const MppEncoder &) = delete;
 
+	/*
+	 * 文件和 copy 路径收到的是 1920x1080 紧凑 NV12；MPP 内部缓冲区按
+	 * 1920x1088 分配。逐行复制会把 UV 起点从 1080 行移动到 1088 行，
+	 * 其余对齐区清零，防止编码器把未初始化 padding 当成图像数据。
+	 */
 	void load_nv12(const unsigned char *source, std::size_t size)
 	{
 		if (!source || size != kInputSize)
@@ -107,6 +121,7 @@ public:
 
 	void write_header(std::ostream &output, EncoderStats &stats)
 	{
+		/* Annex-B 裸流必须先写 SPS/PPS 或 VPS/SPS/PPS，独立解码器才能起播。 */
 		MppPacket packet = nullptr;
 		check_mpp(mpp_packet_init_with_buffer(&packet, packet_buffer_),
 			  "mpp_packet_init_with_buffer(header)");
@@ -143,6 +158,7 @@ public:
 				   std::ostream &output,
 				   EncoderStats &stats)
 	{
+		/* 外部 MppBuffer 的所有权仍属于调用方，本类只在本次提交中借用。 */
 		if (!input_buffer)
 			throw std::runtime_error("external MPP buffer is null");
 		return encode_buffer(input_buffer, index, end_of_stream, output, stats);
@@ -155,6 +171,11 @@ private:
 			  std::ostream &output,
 			  EncoderStats &stats)
 	{
+		/*
+		 * 每个输入帧创建一个轻量 MppFrame 描述符，并复用预分配的 packet
+		 * 缓冲区。阻塞输出模式保证返回前硬件已经消费当前输入，因此实时
+		 * DMA-BUF 路径可以在此函数返回后安全地把 V4L2 buffer 重新 QBUF。
+		 */
 		MppFrame frame = nullptr;
 		MppPacket packet = nullptr;
 		check_mpp(mpp_frame_init(&frame), "mpp_frame_init");
@@ -266,12 +287,14 @@ private:
 		check_mpp(mpi_->control(ctx_, MPP_ENC_GET_CFG, cfg_),
 			  "MPP_ENC_GET_CFG");
 
+		/* prep 描述内存布局；它必须与传入缓冲区的真实 UV 偏移完全一致。 */
 		set_s32("prep:width", kWidth);
 		set_s32("prep:height", kHeight);
 		set_s32("prep:hor_stride", kHorStride);
 		set_s32("prep:ver_stride", config_.ver_stride);
 		set_s32("prep:format", MPP_FMT_YUV420SP);
 
+		/* rc 参数固定输入/输出为 30 fps，码率与 GOP 由前端参数化。 */
 		set_s32("rc:mode", config_.rc == RateControl::Cbr ?
 			MPP_ENC_RC_MODE_CBR : MPP_ENC_RC_MODE_VBR);
 		set_s32("rc:fps_in_flex", 0);
@@ -307,6 +330,7 @@ private:
 		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_CFG, cfg_),
 			  "MPP_ENC_SET_CFG");
 
+		/* 每个 IDR 重复参数集，便于 Stage 5 的接收端从任意关键帧恢复。 */
 		MppEncHeaderMode header_mode = MPP_ENC_HEADER_MODE_EACH_IDR;
 		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_HEADER_MODE, &header_mode),
 			  "MPP_ENC_SET_HEADER_MODE");
