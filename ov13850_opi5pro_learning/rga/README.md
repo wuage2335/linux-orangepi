@@ -179,6 +179,52 @@ bash tests/test_rga_v4l2_live.sh \
 成功时必须处理 300 帧、timeout/drop 为 0，最后一行为
 `RGA_V4L2_LIVE_OK`。
 
+## Direct-MMAP Mode
+
+现有两参数命令保持 copy path。增加 `--direct` 后，程序在 STREAMON 前把每个
+V4L2 MMAP 地址各导入一次 librga：
+
+```bash
+./bin/rga_v4l2_live \
+    --direct \
+    /dev/video11 \
+    /tmp/rga-direct-last-1280x720.nv12
+```
+
+两种所有权顺序：
+
+```text
+copy:   DQBUF -> memcpy -> QBUF -> RGA
+direct: DQBUF -> RGA -> QBUF
+```
+
+Direct 没有显式 memcpy，但 RGA 同步完成前不能归还 capture buffer，否则驱动
+可能在硬件仍读取时覆盖源帧。两种模式均报告正式 300 帧循环的
+`cpu_user_ms`、`cpu_system_ms` 和 `process_cpu_percent`；一个 CPU core 满载记为
+100%。Direct 的 copy 时间字段固定为 0.00。
+
+运行 copy/direct 联合验收：
+
+```bash
+bash tests/test_rga_v4l2_live.sh \
+    build/rga_nv12_resize \
+    /dev/video11 \
+    /tmp/rga-copy-last-1280x720.nv12
+```
+
+运行 bypass/copy/direct 外部对比：
+
+```bash
+bash tests/benchmark_rga_v4l2_modes.sh \
+    build/rga_nv12_resize \
+    /dev/video11 \
+    /tmp/rga-v4l2-benchmark
+```
+
+benchmark 使用 `/usr/bin/time -v` 记录三条路径的 user/system CPU、CPU 百分比、
+elapsed 和最大 RSS。程序内部 getrusage 是 copy/direct 正式循环的主要口径，
+外部 time 包含初始化、预丢弃和退出，只作为整体旁证。
+
 ## Board Acceptance Test
 
 测试脚本必须在 aarch64 Orange Pi 5 Pro 上执行，因为 WSL x86_64 不能运行
