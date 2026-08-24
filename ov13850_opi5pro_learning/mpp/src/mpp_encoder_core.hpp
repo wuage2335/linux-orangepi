@@ -42,6 +42,7 @@ struct EncoderConfig {
 	RateControl rc = RateControl::Cbr;
 	int bitrate = 8000000;
 	int gop = 60;
+	int ver_stride = kVerStride;
 };
 
 struct EncoderStats {
@@ -99,7 +100,7 @@ public:
 
 		check_mpp(mpp_buffer_sync_begin(frame_buffer_),
 			  "mpp_buffer_sync_begin");
-		copy_nv12_to_strided(ptr, source);
+		copy_nv12_to_strided(ptr, source, config_.ver_stride);
 		check_mpp(mpp_buffer_sync_end(frame_buffer_),
 			  "mpp_buffer_sync_end");
 	}
@@ -133,6 +134,27 @@ public:
 			  std::ostream &output,
 			  EncoderStats &stats)
 	{
+		return encode_buffer(frame_buffer_, index, end_of_stream, output, stats);
+	}
+
+	bool encode_external_frame(MppBuffer input_buffer,
+				   int index,
+				   bool end_of_stream,
+				   std::ostream &output,
+				   EncoderStats &stats)
+	{
+		if (!input_buffer)
+			throw std::runtime_error("external MPP buffer is null");
+		return encode_buffer(input_buffer, index, end_of_stream, output, stats);
+	}
+
+private:
+	bool encode_buffer(MppBuffer input_buffer,
+			   int index,
+			  bool end_of_stream,
+			  std::ostream &output,
+			  EncoderStats &stats)
+	{
 		MppFrame frame = nullptr;
 		MppPacket packet = nullptr;
 		check_mpp(mpp_frame_init(&frame), "mpp_frame_init");
@@ -140,12 +162,12 @@ public:
 		mpp_frame_set_width(frame, kWidth);
 		mpp_frame_set_height(frame, kHeight);
 		mpp_frame_set_hor_stride(frame, kHorStride);
-		mpp_frame_set_ver_stride(frame, kVerStride);
+		mpp_frame_set_ver_stride(frame, config_.ver_stride);
 		mpp_frame_set_fmt(frame, MPP_FMT_YUV420SP);
 		mpp_frame_set_pts(frame,
 			static_cast<RK_S64>(index) * 1000000 / kFps);
 		mpp_frame_set_eos(frame, end_of_stream);
-		mpp_frame_set_buffer(frame, frame_buffer_);
+		mpp_frame_set_buffer(frame, input_buffer);
 
 		check_mpp(mpp_packet_init_with_buffer(&packet, packet_buffer_),
 			  "mpp_packet_init_with_buffer(frame)");
@@ -185,7 +207,8 @@ public:
 
 private:
 	static void copy_nv12_to_strided(void *destination,
-					const unsigned char *source)
+					const unsigned char *source,
+					int ver_stride)
 	{
 		auto *dst = static_cast<unsigned char *>(destination);
 		std::memset(dst, 0, kFrameSize);
@@ -198,7 +221,7 @@ private:
 		const std::size_t src_uv_offset =
 			static_cast<std::size_t>(kWidth) * kHeight;
 		const std::size_t dst_uv_offset =
-			static_cast<std::size_t>(kHorStride) * kVerStride;
+			static_cast<std::size_t>(kHorStride) * ver_stride;
 
 		for (int row = 0; row < kHeight / 2; ++row)
 			std::memcpy(dst + dst_uv_offset +
@@ -246,7 +269,7 @@ private:
 		set_s32("prep:width", kWidth);
 		set_s32("prep:height", kHeight);
 		set_s32("prep:hor_stride", kHorStride);
-		set_s32("prep:ver_stride", kVerStride);
+		set_s32("prep:ver_stride", config_.ver_stride);
 		set_s32("prep:format", MPP_FMT_YUV420SP);
 
 		set_s32("rc:mode", config_.rc == RateControl::Cbr ?

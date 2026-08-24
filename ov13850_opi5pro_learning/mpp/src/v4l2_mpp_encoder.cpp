@@ -55,6 +55,8 @@ double elapsed_us(const Clock::time_point &start, const Clock::time_point &end)
 struct MappedBuffer {
 	void *address = MAP_FAILED;
 	std::size_t length = 0;
+	int export_fd = -1;
+	MppBuffer mpp_buffer = nullptr;
 };
 
 struct CapturedFrame {
@@ -65,10 +67,10 @@ struct CapturedFrame {
 
 class VideoCapture {
 public:
-	explicit VideoCapture(const char *device)
+	VideoCapture(const char *device, bool export_dmabuf)
 	{
 		try {
-			initialize(device);
+			initialize(device, export_dmabuf);
 		} catch (...) {
 			cleanup();
 			throw;
@@ -146,8 +148,13 @@ public:
 			throw system_error("VIDIOC_QBUF");
 	}
 
+	MppBuffer mpp_buffer(unsigned int index) const
+	{
+		return buffers_.at(index).mpp_buffer;
+	}
+
 private:
-	void initialize(const char *device)
+	void initialize(const char *device, bool export_dmabuf)
 	{
 		fd_ = open(device, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 		if (fd_ < 0)
@@ -205,7 +212,29 @@ private:
 					     fd_, planes[0].m.mem_offset);
 			if (address == MAP_FAILED)
 				throw system_error("mmap");
-			buffers_.push_back({address, planes[0].length});
+			MappedBuffer mapped;
+			mapped.address = address;
+			mapped.length = planes[0].length;
+			buffers_.push_back(mapped);
+			MappedBuffer &stored = buffers_.back();
+
+			if (export_dmabuf) {
+				v4l2_exportbuffer export_buffer = {};
+				export_buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+				export_buffer.index = index;
+				export_buffer.plane = 0;
+				export_buffer.flags = O_CLOEXEC;
+				if (xioctl(fd_, VIDIOC_EXPBUF, &export_buffer) < 0)
+					throw system_error("VIDIOC_EXPBUF");
+				stored.export_fd = export_buffer.fd;
+
+				MppBufferInfo info = {};
+				info.type = MPP_BUFFER_TYPE_EXT_DMA;
+				info.fd = export_buffer.fd;
+				info.size = planes[0].length;
+				check_mpp(mpp_buffer_import(&stored.mpp_buffer, &info),
+					  "mpp_buffer_import(V4L2 dma-buf)");
+			}
 		}
 	}
 
@@ -215,9 +244,14 @@ private:
 			v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 			xioctl(fd_, VIDIOC_STREAMOFF, &type);
 		}
-		for (const MappedBuffer &buffer : buffers_)
+		for (const MappedBuffer &buffer : buffers_) {
+			if (buffer.mpp_buffer)
+				mpp_buffer_put(buffer.mpp_buffer);
+			if (buffer.export_fd >= 0)
+				close(buffer.export_fd);
 			if (buffer.address != MAP_FAILED)
 				munmap(buffer.address, buffer.length);
+		}
 		if (fd_ >= 0)
 			close(fd_);
 	}
@@ -231,22 +265,33 @@ private:
 
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
+	bool use_dmabuf = false;
+	const char *device = nullptr;
+	const char *output_path = nullptr;
+	if (argc == 3) {
+		device = argv[1];
+		output_path = argv[2];
+	} else if (argc == 4 && !std::strcmp(argv[1], "--dmabuf")) {
+		use_dmabuf = true;
+		device = argv[2];
+		output_path = argv[3];
+	} else {
 		std::cerr << "ERROR: usage: " << argv[0]
-			  << " <video-device> <output.h264>\n";
+			  << " [--dmabuf] <video-device> <output.h264>\n";
 		return 2;
 	}
-	std::remove(argv[2]);
+	std::remove(output_path);
 
 	try {
 		EncoderConfig config;
-		std::ofstream output(argv[2], std::ios::binary | std::ios::trunc);
+		config.ver_stride = use_dmabuf ? kHeight : kVerStride;
+		std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
 		if (!output)
 			throw std::runtime_error("cannot create H.264 output");
+		VideoCapture capture(device, use_dmabuf);
 		MppEncoder encoder(config);
 		EncoderStats stats;
 		encoder.write_header(output, stats);
-		VideoCapture capture(argv[1]);
 		capture.start();
 
 		unsigned int timeouts = 0;
@@ -274,17 +319,28 @@ int main(int argc, char **argv)
 			previous_sequence = frame.sequence;
 			have_previous = true;
 
-			const auto copy_start = Clock::now();
-			encoder.load_nv12(frame.data, kInputSize);
-			const auto copy_end = Clock::now();
-			copy_total_us += elapsed_us(copy_start, copy_end);
-			capture.requeue(frame.index);
+			if (!use_dmabuf) {
+				const auto copy_start = Clock::now();
+				encoder.load_nv12(frame.data, kInputSize);
+				const auto copy_end = Clock::now();
+				copy_total_us += elapsed_us(copy_start, copy_end);
+				capture.requeue(frame.index);
+			}
 
 			const auto mpp_start = Clock::now();
-			const bool eos = encoder.encode_frame(
-				index, index == kFrames - 1, output, stats);
+			bool eos;
+			if (use_dmabuf) {
+				eos = encoder.encode_external_frame(
+					capture.mpp_buffer(frame.index), index,
+					index == kFrames - 1, output, stats);
+			} else {
+				eos = encoder.encode_frame(
+					index, index == kFrames - 1, output, stats);
+			}
 			const auto mpp_end = Clock::now();
 			mpp_total_us += elapsed_us(mpp_start, mpp_end);
+			if (use_dmabuf)
+				capture.requeue(frame.index);
 			if (index == kFrames - 1 && !eos)
 				throw std::runtime_error("last packet did not carry EOS");
 		}
@@ -297,7 +353,9 @@ int main(int argc, char **argv)
 
 		const double loop_seconds =
 			std::chrono::duration<double>(loop_end - loop_start).count();
-		std::cout << "codec=h264 bitrate=8000000 gop=60\n";
+		std::cout << "codec=h264 mode="
+			  << (use_dmabuf ? "dmabuf" : "copy")
+			  << " bitrate=8000000 gop=60\n";
 		std::cout << "pre_skipped=3 frames_in=300 frames_out=300"
 			  << " timeouts=" << timeouts << " dropped=" << dropped << '\n';
 		std::cout << "packets=" << stats.packets
@@ -309,7 +367,7 @@ int main(int argc, char **argv)
 			  << " loop_fps=" << kFrames / loop_seconds << '\n';
 		std::cout << "MPP_V4L2_ENCODE_OK\n";
 	} catch (const std::exception &error) {
-		std::remove(argv[2]);
+		std::remove(output_path);
 		std::cerr << "ERROR: " << error.what() << '\n';
 		return 1;
 	}
