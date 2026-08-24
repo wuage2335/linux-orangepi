@@ -64,6 +64,7 @@ constexpr int kPollTimeoutMs = 2000;
 constexpr int kRgaFormat = RK_FORMAT_YCbCr_420_SP;
 
 enum class InputMode {
+	/* Copy 先脱离 capture buffer；Direct 让 RGA 直接读取当前 DQBUF 地址。 */
 	Copy,
 	Direct,
 };
@@ -107,6 +108,7 @@ double timeval_ms(const timeval &value)
 }
 
 struct CpuUsageSnapshot {
+	/* 正式 300 帧循环累计的当前进程 user/system CPU 时间。 */
 	double user_ms;
 	double system_ms;
 };
@@ -282,6 +284,10 @@ public:
 
 	std::vector<MappedBufferView> mapped_views() const
 	{
+		/*
+		 * 只借出地址和长度，不转移 mmap 所有权。Direct handles 必须在
+		 * VideoCapture 析构前释放，否则 munmap 后仍会引用失效地址。
+		 */
 		std::vector<MappedBufferView> views;
 
 		views.reserve(buffers_.size());
@@ -505,6 +511,10 @@ public:
 		: output_(kDstSize, 0),
 		  output_handle_(output_.data(), output_.size())
 	{
+		/*
+		 * 四个 capture 地址在 STREAMON 前各导入一次，DQBUF 的 index 直接
+		 * 选择对应 source。output 仍是程序独占的长期 buffer。
+		 */
 		if (mapped_views.empty())
 			throw std::runtime_error("direct mode has no MMAP buffers");
 		if (!output_handle_.valid())
@@ -547,6 +557,7 @@ public:
 
 	void resize(unsigned int capture_index)
 	{
+		/* 同步 resize 返回前，main 不能 QBUF 当前 index。 */
 		if (capture_index >= source_buffers_.size())
 			throw std::runtime_error("direct capture index is out of range");
 
@@ -595,6 +606,7 @@ int main(int argc, char **argv)
 	const char *output_path;
 
 	if (argc == 3) {
+		/* 保持旧 CLI 向后兼容：未指定选项就是已验证的 copy path。 */
 		mode = InputMode::Copy;
 		device = argv[1];
 		output_path = argv[2];
@@ -639,6 +651,7 @@ int main(int argc, char **argv)
 		std::uint32_t previous_sequence = 0;
 		bool have_previous_sequence = false;
 		const CpuUsageSnapshot cpu_before = read_cpu_usage();
+		/* CPU 与 wall clock 只覆盖正式 300 帧，不含预丢弃和最后写盘。 */
 		const auto loop_start = SteadyClock::now();
 
 		for (unsigned int i = 0; i < kProcessFrames; ++i) {
@@ -707,6 +720,7 @@ int main(int argc, char **argv)
 		const double cpu_system_ms =
 			cpu_after.system_ms - cpu_before.system_ms;
 		const double process_cpu_percent =
+			/* 100% 表示平均占满一个 CPU core，不代表整颗 SoC 利用率。 */
 			loop_total_s > 0.0 ?
 			(cpu_user_ms + cpu_system_ms) /
 				(loop_total_s * 1000.0) * 100.0 : 0.0;
