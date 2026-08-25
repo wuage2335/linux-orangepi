@@ -312,8 +312,9 @@ int main(int argc, char **argv)
 			throw std::runtime_error("cannot create H.264 output");
 		VideoCapture capture(device, use_dmabuf);
 		MppEncoder encoder(config);
+		OstreamPacketSink output_sink(output);
 		EncoderStats stats;
-		encoder.write_header(output, stats);
+		encoder.write_header(output_sink, stats);
 		capture.start();
 
 		unsigned int timeouts = 0;
@@ -355,10 +356,10 @@ int main(int argc, char **argv)
 			if (use_dmabuf) {
 				eos = encoder.encode_external_frame(
 					capture.mpp_buffer(frame.index), index,
-					index == kFrames - 1, output, stats);
+					index == kFrames - 1, output_sink, stats);
 			} else {
 				eos = encoder.encode_frame(
-					index, index == kFrames - 1, output, stats);
+					index, index == kFrames - 1, output_sink, stats);
 			}
 			const auto mpp_end = Clock::now();
 			mpp_total_us += elapsed_us(mpp_start, mpp_end);

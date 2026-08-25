@@ -129,8 +129,9 @@ int main(int argc, char **argv)
 		MppEncoder encoder(command.config);
 		/* 静态文件只需装载一次；随后重复提交同一 MPP 内部缓冲区。 */
 		encoder.load_nv12(input.data(), input.size());
+		OstreamPacketSink output_sink(output);
 		EncoderStats stats;
-		encoder.write_header(output, stats);
+		encoder.write_header(output_sink, stats);
 
 		const auto start = std::chrono::steady_clock::now();
 		int frames_out = 0;
@@ -139,7 +140,7 @@ int main(int argc, char **argv)
 			if (index == command.request_idr)
 				encoder.request_idr();
 			const bool eos = encoder.encode_frame(
-				index, index == command.frames - 1, output, stats);
+				index, index == command.frames - 1, output_sink, stats);
 			++frames_out;
 			if (index == command.frames - 1 && !eos)
 				throw std::runtime_error("last packet did not carry EOS");

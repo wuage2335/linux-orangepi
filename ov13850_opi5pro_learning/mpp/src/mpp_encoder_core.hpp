@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 
@@ -14,6 +13,8 @@
 #include "rk_mpi.h"
 #include "rk_mpi_cmd.h"
 #include "rk_venc_cfg.h"
+
+#include "encoded_packet_sink.hpp"
 
 namespace camera_mpp {
 
@@ -119,7 +120,7 @@ public:
 			  "mpp_buffer_sync_end");
 	}
 
-	void write_header(std::ostream &output, EncoderStats &stats)
+	void write_header(EncodedPacketSink &sink, EncoderStats &stats)
 	{
 		/* Annex-B 裸流必须先写 SPS/PPS 或 VPS/SPS/PPS，独立解码器才能起播。 */
 		MppPacket packet = nullptr;
@@ -134,7 +135,12 @@ public:
 			check_mpp(ret, "MPP_ENC_GET_HDR_SYNC");
 		}
 
-		write_packet(output, packet, stats);
+		try {
+			deliver_packet(sink, packet, stats, -1, false, true);
+		} catch (...) {
+			mpp_packet_deinit(&packet);
+			throw;
+		}
 		mpp_packet_deinit(&packet);
 	}
 
@@ -146,30 +152,30 @@ public:
 
 	bool encode_frame(int index,
 			  bool end_of_stream,
-			  std::ostream &output,
+			  EncodedPacketSink &sink,
 			  EncoderStats &stats)
 	{
-		return encode_buffer(frame_buffer_, index, end_of_stream, output, stats);
+		return encode_buffer(frame_buffer_, index, end_of_stream, sink, stats);
 	}
 
 	bool encode_external_frame(MppBuffer input_buffer,
 				   int index,
 				   bool end_of_stream,
-				   std::ostream &output,
+				   EncodedPacketSink &sink,
 				   EncoderStats &stats)
 	{
 		/* 外部 MppBuffer 的所有权仍属于调用方，本类只在本次提交中借用。 */
 		if (!input_buffer)
 			throw std::runtime_error("external MPP buffer is null");
-		return encode_buffer(input_buffer, index, end_of_stream, output, stats);
+		return encode_buffer(input_buffer, index, end_of_stream, sink, stats);
 	}
 
 private:
 	bool encode_buffer(MppBuffer input_buffer,
 			   int index,
-			  bool end_of_stream,
-			  std::ostream &output,
-			  EncoderStats &stats)
+			   bool end_of_stream,
+			   EncodedPacketSink &sink,
+			   EncoderStats &stats)
 	{
 		/*
 		 * 每个输入帧创建一个轻量 MppFrame 描述符，并复用预分配的 packet
@@ -219,9 +225,16 @@ private:
 		    is_intra)
 			++stats.idr_frames;
 
-		write_packet(output, packet, stats);
-		++stats.packets;
 		const bool eos = mpp_packet_get_eos(packet);
+		try {
+			deliver_packet(sink, packet, stats,
+				       static_cast<std::int64_t>(index) * 1000000 / kFps,
+				       is_intra, false);
+			++stats.packets;
+		} catch (...) {
+			mpp_packet_deinit(&packet);
+			throw;
+		}
 		mpp_packet_deinit(&packet);
 		return eos;
 	}
@@ -252,9 +265,12 @@ private:
 				    kWidth);
 	}
 
-	static void write_packet(std::ostream &output,
-				 MppPacket packet,
-				 EncoderStats &stats)
+	static void deliver_packet(EncodedPacketSink &sink,
+				   MppPacket packet,
+				   EncoderStats &stats,
+				   std::int64_t pts_us,
+				   bool keyframe,
+				   bool codec_config)
 	{
 		const std::size_t length = mpp_packet_get_length(packet);
 		if (!length)
@@ -264,10 +280,15 @@ private:
 		if (!position)
 			throw std::runtime_error("packet has no data pointer");
 
-		output.write(static_cast<const char *>(position),
-			     static_cast<std::streamsize>(length));
-		if (!output)
-			throw std::runtime_error("failed to write encoded packet");
+		const EncodedPacketView view = {
+			reinterpret_cast<const std::uint8_t *>(position),
+			length,
+			pts_us,
+			keyframe,
+			codec_config,
+			static_cast<bool>(mpp_packet_get_eos(packet)),
+		};
+		sink.consume(view);
 		stats.encoded_bytes += length;
 	}
 
