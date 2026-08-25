@@ -7,15 +7,15 @@
 这是学习项目。用户是主要实践者；Codex 负责原理讲解、拆分步骤、审查结果和
 诊断。代码或板端修改前先说明目标、文件和风险；未经用户明确授权，不得一次性
 代写完整阶段。阶段 4 已完成官方 MPP、文件编码、实时 copy 和 DMA-BUF 验证；
-当前进入阶段 5，先建立带明确时间戳的 RTP/RTSP 低延迟链路。任何完成结论都
-必须有构建、码流解码或实机日志证据。
+阶段 5 的 RTP/UDP 实时里程碑已通过，当前继续 packet timing、队列调优和 RTSP
+重连。任何完成结论都必须有构建、码流解码或实机日志证据。
 
 ## 1. 当前状态
 
 - 项目：Orange Pi 5 Pro（RK3588S）上的 OV13850 CAM2 摄像头链路。
-- 项目阶段：阶段 0-4 已完成实机验收；当前为阶段 5“低延迟视频流”。阶段 5
-  先用已验证的 H.264 elementary stream 建立 RTP/RTSP 发送与 PC 解码基线，
-  再优化时间戳、GOP、队列和播放器缓存。
+- 项目阶段：阶段 0-4 已完成实机验收；当前为阶段 5“低延迟视频流”。RTP/UDP
+  已完成1800帧、30.05fps、0 timeout/drop/overrun，Windows D3D11 实时显示；
+  三组端到端延迟为100/70/100ms。RTSP和断线重连仍未完成。
 - 正式交付/参考驱动：`drivers/media/i2c/ov13850.c`。
 - 当前学习实现：`drivers/media/i2c/ov13850_i2c_min.c`，仅能绑定
   `learning,ov13850-i2c`，不得与正式 `ovti,ov13850` binding 竞争。
@@ -31,6 +31,9 @@
 - 阶段 3 第一版实时 copy path 也已通过：`/dev/video11 -> V4L2 MMAP ->
   memcpy -> QBUF -> RGA` 连续处理 300 帧，30.04 fps、0 timeout、0 drop；
   详细证据见 `docs/codex/rga_v4l2_live_validation.md`。
+- 阶段 5 已新增 typed MPP packet sink、共享 V4L2 capture、GStreamer appsrc RTP
+  sink 和实时 DMA-BUF sender。详细量化数据和方法见
+  `docs/codex/camera_pipeline_quantitative_results.md`。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前分支：`main`；阶段 2 学习驱动源码提交为
@@ -161,7 +164,8 @@
    中请求 IDR 有实机证据。
 3. 自定义 H.264 静态输入300帧由官方 decoder 和 FFmpeg完整解码；H.264/H.265
    参数码流各30帧也完成双重解码。
-4. V4L2 H.264 copy path：300帧、30.03fps、0 timeout/drop，动态场景约9.16Mbps。
+4. V4L2 H.264 copy path：300帧、30.03fps、0 timeout/drop；按3,815,189 bytes
+   和约9.99秒重算，动态场景平均码率约3.06Mbps。
 5. DMA-BUF path：`EXPBUF -> MPP_BUFFER_TYPE_EXT_DMA` 300帧通过。Color-bar 下
    copy/dmabuf码流 SHA 完全相同；DMA 消除约1.82ms copy，CPU 8%降至3%。
 6. V4L2 有效 NV12 UV offset 对应 ver_stride=1080；copy MppBuffer 使用1088

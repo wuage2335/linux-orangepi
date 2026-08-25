@@ -15,8 +15,9 @@ loop_fps=30.03
 SHA-256=bab53407dca430077af3838e2be8a16836fe43e91d098da513ef8b3806d1335f
 ```
 
-实际约 9.16 Mbps，接近 8 Mbps CBR 的允许波动。官方 MPP decoder 和 FFmpeg
-均完整解码 300 帧；PM 为 suspended/usage 0，无新增 fault。
+300帧按30.03fps运行约9.99秒，因此实测平均码率约为
+`3815189*8/9.99=3.06 Mbps`。8 Mbps是RC target，不能替代实测值。官方 MPP
+decoder和FFmpeg均完整解码300帧；PM为suspended/usage 0，无新增fault。
 
 ## Deterministic Color-Bar Copy vs DMA-BUF
 

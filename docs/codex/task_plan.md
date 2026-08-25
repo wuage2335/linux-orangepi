@@ -142,6 +142,15 @@ Raw Annex-B 输入侧 FPS 可能被 FFmpeg 猜测为25；MPP 配置与 PTS 使�
 - 正确处理 PTS/DTS、断开重连和关键帧恢复。
 - 对采集、ISP、编码、网络和播放各段打时间戳。
 
+当前执行结果：
+
+- [x] GStreamer H.264 文件 RTP/UDP 到 Windows 解码基线。
+- [x] typed MPP packet sink 与共享 V4L2 DMA-BUF capture。
+- [x] 1080p30实时 RTP：1800帧、30.05fps、0 timeout/drop/queue overrun。
+- [x] 同屏端到端延迟：100/70/100ms，平均约90ms。
+- [ ] 使用抓包进一步验证 RTP sequence、marker和90kHz timestamp增量。
+- [ ] RTSP shared server、客户端断开重连和关键帧恢复。
+
 完成标准：PC 端稳定播放，端到端延迟可测量，链路断开后能够恢复。
 
 ## 阶段 6：性能测量与稳定性

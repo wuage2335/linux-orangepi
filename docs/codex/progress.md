@@ -1,5 +1,20 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-25 阶段 5 RTP里程碑
+
+- 板端 GStreamer 1.20.3 与 Windows GStreamer 1.28.6 环境验证完成；Windows
+  使用 NVIDIA D3D11 H.264 hardware decode/display。
+- MPP 输出由 ostream-only 重构为同步 typed packet sink，并提取共享 V4L2
+  MMAP/EXPBUF capture；Stage 4 文件、H.264/H.265 参数矩阵和实时双路径回归通过。
+- 实时 `V4L2 DMA-BUF -> MPP H.264 -> appsrc -> RTP/UDP` 完成1800帧，
+  30.05fps、0 timeout、0 sequence drop、0 queue overrun，停流后PM suspended/0。
+- 同屏计时器三组端到端延迟为100/70/100ms，范围70–100ms，平均约90ms，满足
+  第一版不高于200ms目标，60秒运行无持续积帧。
+- 画面偏暗偏绿已定位到未运行 RKAIQ 3A/IQ：exposure 1536/1648、analogue
+  gain仍为最小16；它不是MPP/RTP/D3D11问题。
+- 统一量化结果和测量方法见 `camera_pipeline_quantitative_results.md`。Stage 5
+  仍未完成：packet timing细化、RTSP和断线重连留待后续。
+
 ## 2026-08-25 阶段 4
 
 - 固定官方 Rockchip MPP 1.1.0、commit `c08762ebf`，建立可复现 aarch64 SDK
@@ -8,8 +23,8 @@
   regulator/devfreq 启动告警不阻塞当前硬件编码。
 - 自定义 1920x1080 NV12 H.264/H.265 文件编码通过，支持 CBR/VBR、4/8/12
   Mbps、GOP30/60 和请求 IDR；官方 decoder 与 FFmpeg 均完整解码。
-- 实时 V4L2->MPP H.264 copy path 完成300帧、30.03fps、0 timeout/drop，动态
-  场景码流约9.16Mbps。
+- 实时 V4L2->MPP H.264 copy path 完成300帧、30.03fps、0 timeout/drop；按
+  3,815,189 bytes和约9.99秒重算，动态场景平均码率约3.06Mbps。
 - `/dev/video11` 支持4个 EXPBUF，均为3,133,440 bytes；MPP EXT_DMA 原型完成
   300帧。Color-bar 下 copy/dmabuf码流 SHA 完全相同。
 - DMA-BUF 路径必须使用 ver_stride=1080 解释外部 NV12；copy内部 buffer 使用

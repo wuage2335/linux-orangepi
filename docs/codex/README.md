@@ -19,6 +19,8 @@
 13. [`mpp_file_encoding_validation.md`](mpp_file_encoding_validation.md)：H.264/H.265 文件编码与参数矩阵。
 14. [`mpp_live_encoding_validation.md`](mpp_live_encoding_validation.md)：V4L2 实时 H.264 copy/DMA-BUF 证据。
 15. [`mpp_dmabuf_feasibility.md`](mpp_dmabuf_feasibility.md)：EXPBUF、EXT_DMA、stride 和所有权结论。
+16. [`stage5_rtp_streaming_validation.md`](stage5_rtp_streaming_validation.md)：实时 RTP、Windows D3D11 播放和端到端延迟证据。
+17. [`camera_pipeline_quantitative_results.md`](camera_pipeline_quantitative_results.md)：阶段 0–5 量化结果、公式、测量命令与结论边界。
 
 ## 当前项目主线
 
@@ -34,9 +36,10 @@ lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV1
 文件式 RGA、实时 copy/direct 两种路径，以及 bypass/copy/direct CPU/吞吐/RSS
 对比。所有完成结论均有上述 validation 文档和 HANDOFF 原始证据支持。
 
-阶段 4 已完成官方 MPP、自定义 H.264/H.265、实时 copy 和 DMA-BUF。当前执行
-入口是将已验证 H.264 elementary stream 通过 RTP/RTSP 发送到 PC，建立可测量
-播放基线，再优化 PTS、GOP、发送队列和播放器缓存。
+阶段 4 已完成官方 MPP、自定义 H.264/H.265、实时 copy 和 DMA-BUF。阶段 5
+已经完成 1080p30 RTP/UDP 实时里程碑：1800 帧 30.05 fps、0 timeout/drop/
+queue overrun，Windows D3D11 稳定显示，三次端到端延迟为70–100ms。Stage 5
+仍为当前阶段，后续是更细的 packet timing/队列调优和 RTSP 重连。
 
 ## 协作约束
 
