@@ -855,7 +855,70 @@ MPP frame错误使用ver_stride=1088，从`1920*1088`读取UV。Allocation size�
 Sensor color-bar下copy/dmabuf H.264码流SHA完全相同，300帧均可解码。DMA消除
 约1.82ms copy，CPU从8%降到3%。这才构成layout/cache/ownership正确的证据。
 
-## 22. 新问题记录模板
+## 22. 安装 GStreamer 开发包覆盖活动 uInitrd（已恢复，2026-08-25）
+
+### 22.1 现象
+
+安装 `gstreamer1.0-plugins-bad` 和 GStreamer development packages 时，apt 的
+`initramfs-tools` 触发器尝试在 VFAT `/boot` 创建 hard-link 备份，报告
+`Operation not permitted`，随后重新生成 `6.1.43-rockchip-rk3588` 的
+`/boot/uInitrd`。正在运行的内核实际为 `6.1.99-opi5pro-livecfg-baseline`。
+
+### 22.2 根因与风险
+
+软件包升级触发 initramfs 更新，而 Orange Pi boot 分区使用 VFAT，不支持 dpkg
+期望的 hard link。baseline 部署历史只替换 `Image`，其已验证启动组合一直使用
+`uInitrd-6.1.99-ov13850-learning`。若不检查就重启，会把未经验证的新旧内核组合
+带入启动路径。
+
+### 22.3 恢复与证据
+
+- 未重启板子；
+- 将 apt 生成文件备份到
+  `/home/orangepi/boot-backups/uInitrd.after-gstreamer-install-20260825_112839`；
+- 从 `/boot/uInitrd-6.1.99-ov13850-learning` 原子恢复 `/boot/uInitrd`；
+- 恢复 SHA 为
+  `ba7c16a30841788a9237d9c344d31533ed1ff81f3a1eb1289be8f224d78d741b`；
+- 后续误重启后板子正常进入 `6.1.99-opi5pro-livecfg-baseline`，SSH、摄像头、
+  GStreamer 和 MPP 均可用。
+
+后续任何 apt 操作若触发 initramfs，都必须在重启前复查 `/boot/uInitrd` 的时间、
+大小、`mkimage -l` 和 SHA。
+
+## 23. 实时视频偏暗偏绿（根因已分层，2026-08-25）
+
+### 23.1 现象
+
+实时 RTP 能稳定显示 1920x1080@30，端到端延迟约 70–100 ms，但画面明显偏暗并
+带绿色色偏。相同现象在此前 RKISP NV12 本地采集阶段已经存在。
+
+### 23.2 证据
+
+```text
+exposure=1536, max=1648
+analogue_gain=16, min=16
+test_pattern=Disabled
+```
+
+板端存在 351 KB 的
+`/etc/iqfiles/ov13850_CMK-CT0116_default.json`，分辨率为 2112x1568，但：
+
+- 没有 RKAIQ/3A 可执行程序；
+- 没有 RKAIQ 软件包、systemd service 或运行进程；
+- 学习驱动没有 `RKMODULE_GET_MODULE_INFO` 等 Rockchip module-info ioctl；
+- Windows 已正确解码为 H.264 High -> D3D11 NV12，没有接收端错误。
+
+### 23.3 根因与处理边界
+
+亮度问题来自静态 sensor controls：曝光接近上限但模拟增益停在 1x，没有 AE。
+绿色色偏来自 IQ JSON 未被 3A runtime 使用，ISP 缺少 AWB、CCM、Gamma 等动态参数。
+MPP、RTP 和 D3D11 只编码、传输和显示已有 NV12，不负责白平衡。
+
+短期可用手动 analogue gain A/B 测试验证亮度路径；正确修复需要接入匹配版本的
+RKAIQ runtime、让 IQ 文件匹配 sensor entity，并补齐学习驱动所需 Rockchip module
+ioctl。该工作应作为独立 ISP 3A/IQ 项目处理，不能用播放器色彩滤镜掩盖。
+
+## 24. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

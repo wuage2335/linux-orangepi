@@ -135,6 +135,7 @@ for path in \
 	'ov13850_opi5pro_learning/mpp/src/encoded_packet_sink.hpp' \
 	'ov13850_opi5pro_learning/mpp/src/mpp_encoder_core.hpp' \
 	'ov13850_opi5pro_learning/mpp/src/v4l2_capture.hpp' \
+	'ov13850_opi5pro_learning/scripts/configure_rkisp_1080p.sh' \
 	'ov13850_opi5pro_learning/mpp/build/bundle/official-mpp/include/rockchip/rk_mpi.h' \
 	'ov13850_opi5pro_learning/mpp/build/bundle/official-mpp/lib/librockchip_mpp.so.0'; do
 	grep -F "$path" "$TMP/archive.list" >/dev/null ||
