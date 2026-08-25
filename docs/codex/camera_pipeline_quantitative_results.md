@@ -276,6 +276,13 @@ maximum = 100 ms
 mean    = (100 + 70 + 100) / 3 = 90 ms
 ```
 
+已纳入仓库的同屏证据：
+
+- [70 ms 延迟截图](../stage_5_photo_record/image%20copy.png)，1680x1569，
+  SHA-256 `8379a6ac7b4df2e178c61e036598bdef0fc262c271a8e80c382ca78902d49abc`；
+- [100 ms 延迟截图](../stage_5_photo_record/image.png)，2150x1281，
+  SHA-256 `c72b1f19511cd4b612cd814d30cf0a680d9918224867bc08c5c81e3eebb6e5c1`。
+
 60秒运行中没有观察到延迟持续增长，第一版 `<=200 ms` 目标通过。
 
 ### 7.4 测量误差与边界
