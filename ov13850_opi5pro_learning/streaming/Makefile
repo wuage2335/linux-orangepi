@@ -12,6 +12,7 @@ LIB_DIR := $(BUILD)/lib
 RTP_BIN := $(BIN_DIR)/v4l2_mpp_rtp_sender
 RTSP_BIN := $(BIN_DIR)/v4l2_mpp_rtsp_server
 SMOKE_BIN := $(BIN_DIR)/check_streaming_build
+RTP_SINK_TEST_BIN := $(BIN_DIR)/test_gst_rtp_sink
 RTP_SOURCES := \
 	$(ROOT)/src/gst_rtp_sink.cpp \
 	$(ROOT)/src/v4l2_mpp_rtp_sender.cpp
@@ -23,6 +24,9 @@ SHARED_HEADERS := \
 	$(MPP_SRC)/mpp_encoder_core.hpp \
 	$(MPP_SRC)/v4l2_capture.hpp
 SMOKE_SOURCE := $(ROOT)/tests/check_streaming_build.cpp
+RTP_SINK_TEST_SOURCE := $(ROOT)/tests/test_gst_rtp_sink.cpp
+RTP_SINK_SOURCE := $(ROOT)/src/gst_rtp_sink.cpp
+RTP_SINK_HEADER := $(ROOT)/src/gst_rtp_sink.hpp
 
 GST_MODULES := gstreamer-1.0 gstreamer-app-1.0
 GST_RTSP_MODULES := $(GST_MODULES) gstreamer-rtsp-server-1.0
@@ -32,7 +36,7 @@ MPP_LDFLAGS := -L$(MPP_BUNDLE)/lib
 RPATH := -Wl,--enable-new-dtags,-rpath,'$$ORIGIN/../lib'
 MPP_LDLIBS := -lrockchip_mpp -pthread -ldl
 
-.PHONY: all rtp rtsp smoke check-env runtime-lib clean
+.PHONY: all rtp rtsp smoke test-rtp-sink check-env runtime-lib clean
 
 all: rtp
 
@@ -57,6 +61,18 @@ $(SMOKE_BIN): $(SMOKE_SOURCE) | check-env runtime-lib
 
 smoke: $(SMOKE_BIN)
 	LD_LIBRARY_PATH=$(LIB_DIR) $(SMOKE_BIN)
+
+$(RTP_SINK_TEST_BIN): $(RTP_SINK_TEST_SOURCE) $(RTP_SINK_SOURCE) \
+		$(RTP_SINK_HEADER) $(MPP_SRC)/encoded_packet_sink.hpp | check-env runtime-lib
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) \
+		$$(pkg-config --cflags $(GST_MODULES)) \
+		$(RTP_SINK_TEST_SOURCE) $(RTP_SINK_SOURCE) \
+		$(MPP_LDFLAGS) $(RPATH) \
+		$$(pkg-config --libs $(GST_MODULES)) $(MPP_LDLIBS) -o $@
+
+test-rtp-sink: $(RTP_SINK_TEST_BIN)
+	LD_LIBRARY_PATH=$(LIB_DIR) $(RTP_SINK_TEST_BIN)
 
 $(RTP_BIN): $(RTP_SOURCES) $(SHARED_HEADERS) | check-env runtime-lib
 	@mkdir -p $(BIN_DIR)
