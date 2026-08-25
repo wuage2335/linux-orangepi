@@ -18,12 +18,15 @@ fail()
 [[ -x $SDK/bin/mpi_enc_test ]] || fail 'run fetch_build_mpp.sh first'
 [[ -x $SDK/bin/mpp_info_test ]] || fail 'missing mpp_info_test'
 [[ -f $SDK/lib/librockchip_mpp.so.0 ]] || fail 'missing shared MPP library'
+[[ -f $SDK/include/rockchip/rk_mpi.h ]] || fail 'missing official MPP headers'
 
-mkdir -p "$BUNDLE/bin" "$BUNDLE/lib" "$BUNDLE/share"
+mkdir -p "$BUNDLE/bin" "$BUNDLE/lib" "$BUNDLE/share" \
+    "$BUNDLE/include/rockchip"
 cp "$SDK/bin/mpi_enc_test" "$BUNDLE/bin/"
 cp "$SDK/bin/mpp_info_test" "$BUNDLE/bin/"
 cp "$SDK/bin/mpi_dec_test" "$BUNDLE/bin/"
 cp -a "$SDK/lib/librockchip_mpp.so"* "$BUNDLE/lib/"
+cp -a "$SDK/include/rockchip/." "$BUNDLE/include/rockchip/"
 cp "$MPP_ROOT/ORIGIN.md" "$BUNDLE/share/ORIGIN.md"
 
 if [[ -x $APP_BIN ]]; then

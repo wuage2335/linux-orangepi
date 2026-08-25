@@ -6,6 +6,9 @@ BOARD_CHECKER="$ROOT/scripts/check_gstreamer_board.sh"
 WINDOWS_CHECKER="$ROOT/scripts/check_gstreamer_windows.ps1"
 RTP_SENDER="$ROOT/scripts/send_h264_file_rtp.sh"
 RTP_RECEIVER="$ROOT/scripts/receive_h264_rtp.ps1"
+PACKAGE_SCRIPT="$ROOT/scripts/package_streaming_source.sh"
+STREAMING_MAKEFILE="$ROOT/Makefile"
+SMOKE_SOURCE="$ROOT/tests/check_streaming_build.cpp"
 
 fail()
 {
@@ -17,6 +20,9 @@ fail()
 [[ -f "$WINDOWS_CHECKER" ]] || fail "missing Windows environment checker"
 [[ -x "$RTP_SENDER" ]] || fail "missing H.264 RTP sender"
 [[ -f "$RTP_RECEIVER" ]] || fail "missing Windows RTP receiver"
+[[ -x "$PACKAGE_SCRIPT" ]] || fail "missing streaming source packager"
+[[ -f "$STREAMING_MAKEFILE" ]] || fail "missing native streaming Makefile"
+[[ -f "$SMOKE_SOURCE" ]] || fail "missing native streaming smoke source"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -102,6 +108,37 @@ for token in \
 	'avdec_h264'; do
 	grep -F "$token" "$RTP_RECEIVER" >/dev/null ||
 		fail "Windows receiver missing pipeline token: $token"
+done
+
+for token in \
+	'gstreamer-1.0' \
+	'gstreamer-app-1.0' \
+	'gstreamer-rtsp-server-1.0' \
+	'librockchip_mpp' \
+	'$ORIGIN/../lib' \
+	'check_streaming_build'; do
+	grep -F "$token" "$STREAMING_MAKEFILE" >/dev/null ||
+		fail "streaming Makefile missing token: $token"
+done
+
+"$PACKAGE_SCRIPT" "$TMP/dist" >"$TMP/package.out"
+ARCHIVE="$TMP/dist/stage5-streaming-source.tar.gz"
+CHECKSUM="$ARCHIVE.sha256"
+[[ -s "$ARCHIVE" ]] || fail "streaming source archive is empty"
+[[ -s "$CHECKSUM" ]] || fail "streaming source checksum is missing"
+(cd "$TMP/dist" && sha256sum -c "$(basename "$CHECKSUM")") >/dev/null ||
+	fail "streaming source checksum failed"
+
+tar -tzf "$ARCHIVE" >"$TMP/archive.list"
+for path in \
+	'ov13850_opi5pro_learning/streaming/Makefile' \
+	'ov13850_opi5pro_learning/mpp/src/encoded_packet_sink.hpp' \
+	'ov13850_opi5pro_learning/mpp/src/mpp_encoder_core.hpp' \
+	'ov13850_opi5pro_learning/mpp/src/v4l2_capture.hpp' \
+	'ov13850_opi5pro_learning/mpp/build/bundle/official-mpp/include/rockchip/rk_mpi.h' \
+	'ov13850_opi5pro_learning/mpp/build/bundle/official-mpp/lib/librockchip_mpp.so.0'; do
+	grep -F "$path" "$TMP/archive.list" >/dev/null ||
+		fail "streaming source archive missing: $path"
 done
 
 echo "PASS: streaming script contracts"

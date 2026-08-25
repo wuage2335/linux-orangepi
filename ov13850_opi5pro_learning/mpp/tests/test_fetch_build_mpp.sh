@@ -5,8 +5,10 @@ set -euo pipefail
 TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MPP_ROOT=$(cd "$TEST_DIR/.." && pwd)
 BUILD_SCRIPT="$MPP_ROOT/scripts/fetch_build_mpp.sh"
+PACKAGE_SCRIPT="$MPP_ROOT/scripts/package_mpp_bundle.sh"
 ORIGIN="$MPP_ROOT/ORIGIN.md"
 SDK="$MPP_ROOT/build/sdk"
+BUNDLE="$MPP_ROOT/build/bundle/official-mpp"
 EXPECTED_COMMIT=c08762ebfadeb4e986d2fed993bc7a54862d3ebe
 
 fail()
@@ -16,6 +18,7 @@ fail()
 }
 
 [[ -x $BUILD_SCRIPT ]] || fail "missing executable build script: $BUILD_SCRIPT"
+[[ -x $PACKAGE_SCRIPT ]] || fail "missing executable package script: $PACKAGE_SCRIPT"
 [[ -f $ORIGIN ]] || fail "missing origin manifest: $ORIGIN"
 
 grep -Fq "$EXPECTED_COMMIT" "$ORIGIN" || fail 'origin commit mismatch'
@@ -37,5 +40,14 @@ file "$SDK/bin/mpp_info_test" | grep -Fq 'ARM aarch64' ||
     fail 'mpp_info_test is not aarch64'
 
 (cd "$SDK" && sha256sum -c SHA256SUMS)
+
+"$PACKAGE_SCRIPT"
+
+for header in rk_mpi.h mpp_buffer.h mpp_frame.h mpp_packet.h rk_venc_cfg.h; do
+    [[ -f $BUNDLE/include/rockchip/$header ]] ||
+        fail "bundle missing development header: $header"
+done
+
+(cd "$BUNDLE" && sha256sum -c SHA256SUMS)
 
 printf 'PASS: official MPP SDK build\n'
