@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BOARD_CHECKER="$ROOT/scripts/check_gstreamer_board.sh"
 WINDOWS_CHECKER="$ROOT/scripts/check_gstreamer_windows.ps1"
+RTP_SENDER="$ROOT/scripts/send_h264_file_rtp.sh"
+RTP_RECEIVER="$ROOT/scripts/receive_h264_rtp.ps1"
 
 fail()
 {
@@ -13,6 +15,8 @@ fail()
 
 [[ -x "$BOARD_CHECKER" ]] || fail "missing board environment checker"
 [[ -f "$WINDOWS_CHECKER" ]] || fail "missing Windows environment checker"
+[[ -x "$RTP_SENDER" ]] || fail "missing H.264 RTP sender"
+[[ -f "$RTP_RECEIVER" ]] || fail "missing Windows RTP receiver"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -69,6 +73,35 @@ for token in udpsrc rtpjitterbuffer rtph264depay h264parse \
 	     d3d11h264dec avdec_h264 d3d11videosink autovideosink; do
 	grep -F "'$token'" "$WINDOWS_CHECKER" >/dev/null ||
 		fail "Windows checker skipped plugin: $token"
+done
+
+printf '\x00\x00\x00\x01\x67\x64\x00\x28' >"$TMP/input.h264"
+PATH="$TMP/bin:$PATH" \
+    "$RTP_SENDER" "$TMP/input.h264" 192.168.1.6 5004 \
+    >"$TMP/sender.out"
+
+for token in \
+	'filesrc' \
+	'h264parse' \
+	'video/x-h264,stream-format=byte-stream,framerate=30/1' \
+	'rtph264pay pt=96 mtu=1200 config-interval=1' \
+	'udpsink host=192.168.1.6 port=5004 sync=true async=false'; do
+	grep -F "$token" "$CALL_LOG" >/dev/null ||
+		fail "RTP sender missing pipeline token: $token"
+done
+
+for token in \
+	'application/x-rtp' \
+	'encoding-name=H264' \
+	'payload=96' \
+	'clock-rate=90000' \
+	'rtpjitterbuffer' \
+	'drop-on-latency=true' \
+	'rtph264depay' \
+	'd3d11h264dec' \
+	'avdec_h264'; do
+	grep -F "$token" "$RTP_RECEIVER" >/dev/null ||
+		fail "Windows receiver missing pipeline token: $token"
 done
 
 echo "PASS: streaming script contracts"
