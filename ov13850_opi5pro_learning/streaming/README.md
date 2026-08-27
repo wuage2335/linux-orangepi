@@ -5,7 +5,7 @@
 ```text
 OV13850 -> RKISP 1920x1080 NV12@30
 -> V4L2 DMA-BUF -> Rockchip MPP H.264
--> GStreamer appsrc -> RTP/UDP
+-> GStreamer appsrc -> RTP/UDP or shared RTSP
 -> Windows GStreamer D3D11 decode/display
 ```
 
@@ -61,6 +61,8 @@ ov13850_opi5pro_learning/
 make -C streaming smoke
 make -C streaming test-rtp-sink
 make -C streaming rtp
+make -C streaming test-live-pts
+make -C streaming rtsp
 ```
 
 程序通过 `$ORIGIN/../lib` 加载随包携带的官方 MPP 1.1.0，不使用系统 MPP 库。
@@ -122,7 +124,9 @@ STREAM_RTP_OK
 - Windows 成功协商 H.264 High 1920x1080@30，并使用 D3D11 NV12 显示；
 - 三次同屏计时样本为 100 ms、70 ms、100 ms；
 - 当前图像偏暗偏绿来自未运行 RKAIQ 3A/IQ，不是 RTP/MPP 解码问题；
-- RTP packet timing和低延迟参数矩阵已完成；本阶段后续工作为RTSP重连。
+- RTP packet timing和低延迟参数矩阵已完成；shared RTSP和重连也已完成；
+- RTSP五组GStreamer延迟为60/70/10/160/60ms，平均72ms，无累计漂移；
+- VLC播放与重连稳定但约400ms，只作为兼容性客户端。
 
 ## Recommended RTP Baseline
 
@@ -144,3 +148,34 @@ B frames               = 0
 
 GOP60单次重连可立即恢复，但理论最坏要等约2秒自然IDR；GOP30把该上限缩短为
 约1秒，适合当前低延迟恢复目标。
+
+## Shared RTSP Server
+
+板端：
+
+```bash
+./streaming/build/bin/v4l2_mpp_rtsp_server \
+  --device /dev/video11 --service 8554 --mount /live \
+  --bitrate 8000000 --gop 30 --mtu 1200 \
+  --queue-buffers 2 --mode dmabuf
+```
+
+Windows GStreamer：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\streaming\scripts\receive_h264_rtsp.ps1 `
+  -Uri rtsp://192.168.1.10:8554/live -LatencyMs 30 -Decoder software
+```
+
+服务端始终保持一套V4L2/MPP链路。新客户端到来时补发SPS/PPS并请求IDR；无客户端
+时继续消费编码输出但不积压网络数据。`LivePtsClock`使用真实单调时间生成PTS，
+避免30.05fps实采与固定30fps时间基形成约95ms/分钟的累计漂移。
+
+自动重连验收：
+
+```bash
+bash streaming/tests/test_rtsp_recovery.sh streaming /dev/video11 8554 /live
+```
+
+手机播放不是当前阶段的完成条件。图像偏暗偏绿仍属于独立RKAIQ 3A/IQ工作项。

@@ -6,6 +6,7 @@ BOARD_CHECKER="$ROOT/scripts/check_gstreamer_board.sh"
 WINDOWS_CHECKER="$ROOT/scripts/check_gstreamer_windows.ps1"
 RTP_SENDER="$ROOT/scripts/send_h264_file_rtp.sh"
 RTP_RECEIVER="$ROOT/scripts/receive_h264_rtp.ps1"
+RTSP_RECEIVER="$ROOT/scripts/receive_h264_rtsp.ps1"
 PACKAGE_SCRIPT="$ROOT/scripts/package_streaming_source.sh"
 STREAMING_MAKEFILE="$ROOT/Makefile"
 SMOKE_SOURCE="$ROOT/tests/check_streaming_build.cpp"
@@ -20,6 +21,7 @@ fail()
 [[ -f "$WINDOWS_CHECKER" ]] || fail "missing Windows environment checker"
 [[ -x "$RTP_SENDER" ]] || fail "missing H.264 RTP sender"
 [[ -f "$RTP_RECEIVER" ]] || fail "missing Windows RTP receiver"
+[[ -f "$RTSP_RECEIVER" ]] || fail "missing Windows RTSP receiver"
 [[ -x "$PACKAGE_SCRIPT" ]] || fail "missing streaming source packager"
 [[ -f "$STREAMING_MAKEFILE" ]] || fail "missing native streaming Makefile"
 [[ -f "$SMOKE_SOURCE" ]] || fail "missing native streaming smoke source"
@@ -94,6 +96,20 @@ for token in \
 	'udpsink host=192.168.1.6 port=5004 sync=true async=false'; do
 	grep -F "$token" "$CALL_LOG" >/dev/null ||
 		fail "RTP sender missing pipeline token: $token"
+done
+
+for token in \
+	'rtspsrc' \
+	'location=' \
+	'protocols=tcp' \
+	'latency=' \
+	'rtph264depay' \
+	'h264parse' \
+	'd3d11h264dec' \
+	'avdec_h264' \
+	'sync=false'; do
+	grep -F "$token" "$RTSP_RECEIVER" >/dev/null ||
+		fail "Windows RTSP receiver missing pipeline token: $token"
 done
 
 for token in \

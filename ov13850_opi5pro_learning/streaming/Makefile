@@ -14,6 +14,7 @@ RTSP_BIN := $(BIN_DIR)/v4l2_mpp_rtsp_server
 SMOKE_BIN := $(BIN_DIR)/check_streaming_build
 RTP_SINK_TEST_BIN := $(BIN_DIR)/test_gst_rtp_sink
 CONGESTION_TEST_BIN := $(BUILD)/host/test_congestion_idr_controller
+LIVE_PTS_TEST_BIN := $(BUILD)/host/test_live_pts_clock
 RTP_SOURCES := \
 	$(ROOT)/src/gst_rtp_sink.cpp \
 	$(ROOT)/src/v4l2_mpp_rtp_sender.cpp
@@ -30,6 +31,8 @@ RTP_SINK_SOURCE := $(ROOT)/src/gst_rtp_sink.cpp
 RTP_SINK_HEADER := $(ROOT)/src/gst_rtp_sink.hpp
 CONGESTION_HEADER := $(ROOT)/src/congestion_idr_controller.hpp
 CONGESTION_TEST_SOURCE := $(ROOT)/tests/test_congestion_idr_controller.cpp
+LIVE_PTS_HEADER := $(ROOT)/src/live_pts_clock.hpp
+LIVE_PTS_TEST_SOURCE := $(ROOT)/tests/test_live_pts_clock.cpp
 
 GST_MODULES := gstreamer-1.0 gstreamer-app-1.0
 GST_RTSP_MODULES := $(GST_MODULES) gstreamer-rtsp-server-1.0
@@ -39,7 +42,8 @@ MPP_LDFLAGS := -L$(MPP_BUNDLE)/lib
 RPATH := -Wl,--enable-new-dtags,-rpath,'$$ORIGIN/../lib'
 MPP_LDLIBS := -lrockchip_mpp -pthread -ldl
 
-.PHONY: all rtp rtsp smoke test-rtp-sink test-congestion check-env runtime-lib clean
+.PHONY: all rtp rtsp smoke test-rtp-sink test-congestion test-live-pts \
+	check-env runtime-lib clean
 
 all: rtp
 
@@ -84,6 +88,13 @@ $(CONGESTION_TEST_BIN): $(CONGESTION_TEST_SOURCE) $(CONGESTION_HEADER)
 test-congestion: $(CONGESTION_TEST_BIN)
 	$(CONGESTION_TEST_BIN)
 
+$(LIVE_PTS_TEST_BIN): $(LIVE_PTS_TEST_SOURCE) $(LIVE_PTS_HEADER)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $< -o $@
+
+test-live-pts: $(LIVE_PTS_TEST_BIN)
+	$(LIVE_PTS_TEST_BIN)
+
 $(RTP_BIN): $(RTP_SOURCES) $(SHARED_HEADERS) $(CONGESTION_HEADER) | check-env runtime-lib
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) \
@@ -93,7 +104,8 @@ $(RTP_BIN): $(RTP_SOURCES) $(SHARED_HEADERS) $(CONGESTION_HEADER) | check-env ru
 
 rtp: $(RTP_BIN)
 
-$(RTSP_BIN): $(RTSP_SOURCES) $(RTP_SOURCES) $(SHARED_HEADERS) | runtime-lib
+$(RTSP_BIN): $(RTSP_SOURCES) $(RTP_SOURCES) $(SHARED_HEADERS) \
+		$(ROOT)/src/gst_rtsp_server.hpp $(LIVE_PTS_HEADER) | runtime-lib
 	@command -v $(CXX) >/dev/null
 	@pkg-config --exists $(GST_RTSP_MODULES)
 	@mkdir -p $(BIN_DIR)
