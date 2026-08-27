@@ -53,6 +53,27 @@ diff --git a/include/common/rkisp3-config.h b/include/common/rkisp3-config.h
  	struct isp3x_stat params;
  } __attribute__ ((packed));
  
+diff --git a/hwi/isp20/Stream.cpp b/hwi/isp20/Stream.cpp
+--- a/hwi/isp20/Stream.cpp
++++ b/hwi/isp20/Stream.cpp
+@@ -139,7 +139,16 @@ XCamReturn RkPollThread::start ()
+         return XCAM_RETURN_ERROR_UNKNOWN;
+     }
+ 
+-    Thread::start();
++    if (!Thread::start()) {
++        XCAM_LOG_WARNING("Thread(%s) realtime start failed; retry SCHED_OTHER",
++                         XCAM_STR(get_name()));
++        set_policy(SCHED_OTHER);
++        set_priority(0);
++        if (!Thread::start()) {
++            destroy_stop_fds();
++            return XCAM_RETURN_ERROR_UNKNOWN;
++        }
++    }
+ 
+     return XCAM_RETURN_NO_ERROR;
+ }
 diff --git a/rkaiq_3A_server/rkaiq_3A_server.cpp b/rkaiq_3A_server/rkaiq_3A_server.cpp
 index ae878de..128bc26 100644
 --- a/rkaiq_3A_server/rkaiq_3A_server.cpp

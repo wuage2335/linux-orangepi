@@ -48,6 +48,9 @@ for token in 'static int width = 2112' 'static int height = 1568' \
 		fail "compatibility patch missing token: $token"
 done
 
+grep -F 'retry SCHED_OTHER' "$PATCH" >/dev/null ||
+	fail "compatibility patch missing non-root poll-thread fallback"
+
 for token in 'struct sensor_exposure_cfg exposure' 'u32 params_id'; do
 	grep -F "$token" "$PATCH" >/dev/null ||
 		fail "ISP3 ABI patch missing token: $token"
