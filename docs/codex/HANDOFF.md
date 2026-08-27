@@ -50,10 +50,11 @@
   aarch64 bundle、module-info shim、IQ 兼容转换、固定焦点 AF 和单摄 online
   兼容。服务初始化及 `/dev/video11` 30.05 fps 通过，系统库和 `/etc/iqfiles`
   未被覆盖。
-- Stage 6 当前阻塞是 `/dev/video18` stats buffer 不 dequeue。动态 AE/AWB 尚未
-  闭环，暗绿问题未验收；不要把初始曝光/AWB 参数或静态画面当作 3A 成功证据。
+- Stage 6 已定位普通用户 `SCHED_RR` stats poll 线程创建失败；v13 回退
+  `SCHED_OTHER` 后，AE 在 1 秒内把暗场 exposure 150->2995、gain 16->248，
+  AWB 连续逐帧执行。剩余工作是用户对明亮/普通/较暗三种实景做最终画质验收。
 - 板端收尾状态：RKAIQ 已停止，sensor PM `suspended/0`，controls 恢复
-  `exposure=1536`、`analogue_gain=16`。详细过程见
+  `exposure=1536`、`analogue_gain=16`、`VBLANK=96`，内核 debug 恢复 0。详细过程见
   `docs/codex/stage6_rkaiq_3a_validation.md`。
 - 3A private runtime 活动时的 DMA-BUF/MPP/RTP 回归为 300 帧、30.04 fps、
   0 timeout/drop/queue overrun、10 IDR；退出后 PM suspended/0，fault check 通过。
@@ -62,7 +63,8 @@
   未重启。活动 `/boot/Image` 仍是前述稳定基线。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
-- Stage 6 开发分支：`codex/stage6-rkaiq-3a`；阶段 2 学习驱动源码提交为
+- 当前本地 `main` 已合并 Stage 6；开发分支为 `codex/stage6-rkaiq-3a`。阶段 2
+  学习驱动源码提交为
   `592d4171c feat(ov13850): complete stage 2 learning driver`。验证文档提交见最新
   `git log`；继续前始终重新读取 `git status -sb`。
 

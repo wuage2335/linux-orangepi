@@ -22,7 +22,8 @@ The launcher generates a compatible IQ copy under the bundle runtime
 directory, enables the module-info shim, and selects single-camera online
 mode. It never modifies `/etc/iqfiles`.
 
-Current board status is partial: initialization and 30.05 fps online capture
-pass, but dynamic ISP statistics do not dequeue on the current 6.1 driver, so
-AE/AWB convergence is not yet accepted. See
+Current board status: initialization, online capture, dynamic ISP statistics,
+AE and per-frame AWB processing pass as an unprivileged user. The compatibility
+patch falls back from `SCHED_RR` to `SCHED_OTHER` when `CAP_SYS_NICE` is absent.
+Bright/normal/dark subjective image-quality acceptance remains manual. See
 `docs/codex/stage6_rkaiq_3a_validation.md`.

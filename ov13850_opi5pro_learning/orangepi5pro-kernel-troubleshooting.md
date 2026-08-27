@@ -988,7 +988,7 @@ reset，时钟回退时保持PTS不倒退。RTP/UDP既有90kHz固定时间戳路
 VLC默认约400ms，只作为兼容性客户端；低延迟验收使用GStreamer。手机测试由用户
 明确移为可选项。
 
-## 26. RKAIQ 接入的连续兼容问题（部分解决，2026-08-28）
+## 26. RKAIQ 接入的连续兼容问题（主要链路已解决，2026-08-28）
 
 ### 26.1 现象
 
@@ -1008,16 +1008,20 @@ VLC默认约400ms，只作为兼容性客户端；低延迟验收使用GStreamer
 - 当前内核 ISP3 params/stats 各新增 `exposure`/`params_id`：给旧用户态头补最小
   ABI 字段，不能整体替换内核 UAPI，否则会丢 RKAIQ 私有算法 ID。
 
-### 26.3 当前阻塞
+### 26.3 stats poll 根因与修复
 
-`/dev/video18` 报告 16172 字节 stats buffer，RKAIQ 可申请 buffer 并 STREAMON，
-但运行期持续 poll timeout，没有 dequeue。AE/AWB 因此只有初始化值，不是自动
-闭环。旧版本自带 OV13855 ISP3x IQ 的 A/B 结果相同，排除单一 JSON 转换问题。
+内核 debug=4 显示 seq0-3 的 stats buffer 均已完成，随后 `buf=NULL`。旧 RKAIQ
+把 stats poll 线程设为 `SCHED_RR/priority 20`；普通用户没有 `CAP_SYS_NICE`，
+`pthread_create()` 失败，而 `RkPollThread::start()` 忽略返回值。增加
+`SCHED_OTHER` 回退并重试后，普通用户下 AE/AWB 动态闭环成立。
+
+暗场实测 1 秒内 exposure 150->2995、gain 16->248、VBLANK 96->1449；AWB
+连续逐帧执行。此时降到约 16.57 fps 是 AE 增大 VTS 的结果，不是链路掉帧。
 
 ### 26.4 安全结论
 
-当前不得安装 systemd 服务或覆盖系统库。板端已停止 RKAIQ，恢复曝光 1536、增益
-16，PM 为 suspended/0。完整日志、量化值和下一步见
+三种物理场景画质验收前仍不安装 systemd 服务或覆盖系统库。板端已停止 RKAIQ，
+恢复曝光1536、增益16、VBLANK96，PM为suspended/0，debug恢复0。完整日志见
 `docs/codex/stage6_rkaiq_3a_validation.md`。
 
 ## 27. 新问题记录模板

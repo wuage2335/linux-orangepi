@@ -377,13 +377,15 @@ fixed-30fps drift    = about +95 ms/min
 | 无流初始化 | 连续等待 15 秒，timeout 124，无 SIGSEGV |
 | online 单次采集 | 90 帧，30.05 fps，279,936,000 bytes |
 | online 持续采集 | 360 帧，12 秒，30.05 fps |
-| 3A + MPP/RTP | 300 帧，30.04 fps，0 timeout/drop/overrun，10 IDR |
-| 当前 IQ 静态输出 | Y mean 0.005，U/V mean 128.000 |
-| 手动曝光瞬态 | Y mean 0.937，U 128.766，V 128.011 |
-| 动态 controls | exposure 150、gain 16，未随 12 秒场景更新 |
-| stats | `/dev/video18` buffer 16172 bytes，但运行期无 dequeue |
+| v12 init-only + MPP/RTP | 300 帧，30.04 fps，0 timeout/drop/overrun，10 IDR |
+| v13 暗场 controls | 1秒内 exposure 150->2995、gain 16->248、VBLANK 96->1449 |
+| v13 暗场帧率 | VTS 增大后约16.57 fps |
+| v13 暗场图像 | Y mean 19.497，U 128.808，V 127.343 |
+| AWB | 约90帧连续执行；暗场 gain `(1.7498,1,1,1.6254)` |
+| stats | seq0-3内核完成；v13非root持续DQBUF/QBUF，AE/AWB闭环 |
 | 停止后 PM | suspended，runtime_usage 0 |
 
 亮度/色度由 `capture_image_stats.sh` 分别扫描 NV12 的 Y、U、V plane 得到；FPS 来自
-`v4l2-ctl --stream-poll`。动态 stats 尚未通过，因此这些数据是故障边界，不是
-AE/AWB 验收结果。完整过程见 `stage6_rkaiq_3a_validation.md`。
+`v4l2-ctl --stream-poll`。动态 stats 与算法执行已通过；三种实景的最终主观画质
+和亮场恢复到30fps仍待用户现场验收。完整过程见
+`stage6_rkaiq_3a_validation.md`。

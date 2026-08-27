@@ -27,7 +27,8 @@ Version: AIQ v3.0x9.1 / ISP_HW_V30
 - LD_PRELOAD shim 仅在 `RKAIQ_MODULE_INFO_SHIM=1` 时补旧活动内核缺失的 module
   ioctl；兼容 AArch64 ioctl 命令的 32 位符号扩展。
 - 兼容补丁处理实体名、2112x1568、`/dev/video11`、IQ 私有路径、固定焦点 AF、
-  单摄 online/no-readback，以及当前 ISP3 params/stats 的两个 ABI 字段。
+  单摄 online/no-readback、ISP3 params/stats ABI，以及实时线程权限不足时的
+  `SCHED_OTHER` 回退。
 - IQ 转换器只写运行目录副本，映射旧解析器需要的模块键与 AE/AWB 枚举；系统 IQ
   SHA 保持 `949c98a7ab6a60ecb86190406fbcae797742afb428bdc31a98850940ccaf6999`。
 
@@ -43,6 +44,9 @@ Version: AIQ v3.0x9.1 / ISP_HW_V30
    online 后 `/dev/video11` 恢复 30.05 fps。
 5. 当前内核 `rkisp3x_isp_stat_buffer` 比旧头多 `params_id`，params 多
    `exposure`；最小 ABI 补丁可编译并匹配 16172 字节 stats buffer。
+6. 内核 debug=4 证明 seq 0-3 stats 已完成，随后 buffer 未被用户态回收。根因是
+   普通用户无 `CAP_SYS_NICE`，`SCHED_RR` stats poll 线程创建失败且返回值被忽略；
+   v13 回退 `SCHED_OTHER` 后，普通用户下 AE/AWB 每帧运行。
 
 ## 5. 板端结果
 
@@ -54,32 +58,33 @@ no-stream server: 连续 15 秒等待事件，timeout 返回 124，无崩溃
 online capture: 90 帧，30.05 fps，输出 279936000 bytes
 12 秒持续流: 360 帧，30.05 fps
 MPP/RTP 回归: 300 帧，30.04 fps，0 timeout/drop/overrun，10 IDR
+v13 非 root AE: 1 秒内 exposure 150->2995、gain 16->248、VBLANK 96->1449
+v13 AWB: 连续约 90 帧执行，暗场 gain=(1.7498,1.0,1.0,1.6254)
 service stop: sensor PM suspended, runtime_usage=0
 ```
 
 ### 5.2 尚未通过
 
-动态 AE/AWB 未闭环。v12 中 `/dev/video18` 能以 16172 字节 buffer 启动，但
-`isp_3a_stats_poll` 持续超时，没有 dequeue；曝光保持初始化值 150 行，增益保持
-16。2022 同版本自带的 OV13855 ISP3x IQ A/B 也没有动态 stats，排除仅由当前
-OV13850 JSON 转换造成。
+动态 stats、AE 与 AWB 算法执行已经闭环。尚未完成的是物理明亮、普通和较暗三种
+场景的人工画质验收：无人值守期间无法确认摄像头视野中的显示器是否真正点亮，
+所谓白屏 A/B 没有改变传感器测得亮度，因此不能作为亮场证据。
 
 当前黑暗场景的单帧统计：
 
 ```text
 3A 前历史基线: Y mean 4.030-4.049, U/V mean 128
-v12 初始化参数: Y mean 0.005, U mean 128.000, V mean 128.000
-手动曝光瞬态:   Y mean 0.937, U mean 128.766, V mean 128.011
+v13 暗场 AE 后:  Y mean 19.497, U mean 128.808, V mean 127.343
 ```
 
-因此不能宣称暗绿问题已经修复，也不能把静态 AWB 初值当作自动白平衡证据。
+暗场亮度已有量化提升，AWB 也逐帧执行；但在用户查看三种实景前，仍不把“暗绿
+画质已完全修复”作为最终验收结论。
 
 ## 6. 当前安全状态与下一步
 
 板端最终已停止 RKAIQ，恢复 `exposure=1536`、`analogue_gain=16`，PM 为
-`suspended/0`。下一步应定位当前 6.1 `rkisp-statistics` 不出队的条件，优先比较
-同内核版本配套 RKAIQ userspace 或追踪 stats/params stream 状态；完成动态 stats
-前不要安装 systemd 服务，也不要把私有 bundle 覆盖到系统库。
+`suspended/0`，`video_rkisp.debug` 已恢复 0。下一步由用户在明亮、普通、较暗三种
+实景查看画面并记录 controls/图像统计；验收前不要安装 systemd 服务，也不要把
+私有 bundle 覆盖到系统库。
 
 永久内核候选已在独立输出目录构建，但未部署：
 

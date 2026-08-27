@@ -7,8 +7,10 @@
 - 通过 core/gdb 定位并修复 ADRC JSON 空指针；处理固定焦点 AF、AArch64 ioctl
   符号扩展、实体名、mainpath、单摄 online 与 ISP3 最小 ABI。
 - 板端验证 15 秒无流等待不崩溃、90 帧和 360 帧 online 采集均为 30.05 fps。
-- 动态 AE/AWB 尚未完成：stats 节点启动但不 dequeue。板端已停止服务并恢复
-  exposure 1536/gain 16，PM suspended/0。
+- 内核 debug=4 发现 seq0-3 stats 已完成，随后普通用户的 `SCHED_RR` poll 线程
+  因权限失败而未回收。v13 增加 `SCHED_OTHER` 回退后，非 root AE/AWB 闭环通过。
+- 暗场 1 秒内 exposure 150->2995、gain 16->248、VBLANK 96->1449；AWB 连续
+  逐帧执行。收尾已停止服务并恢复 exposure1536/gain16/VBLANK96、PM suspended/0。
 - 3A runtime 与阶段5 DMA-BUF/MPP/RTP 联合回归通过：300帧、30.04fps、
   0 timeout/drop/overrun、10 IDR，fault check 为 OK。
 - 独立 `O=` 完整构建候选 Image 成功；`ov13850_min_ioctl` 与 compat 符号存在，

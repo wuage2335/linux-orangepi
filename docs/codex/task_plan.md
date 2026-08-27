@@ -180,14 +180,15 @@ queue2、MTU1200、DMA-BUF和GStreamer 30ms接收缓存。手机播放由用户�
 - [x] 给学习驱动补 Rockchip module-info ioctl；旧活动内核使用受控 shim 验证。
 - [x] 修复 IQ 键/枚举、固定焦点 AF、单摄 online 模式和 ISP3 最小 ABI 差异。
 - [x] RKAIQ 初始化、等待 stream event、1920x1080 NV12 30.05 fps 与 PM 回归通过。
-- [ ] 打通 `/dev/video18` 动态 ISP stats dequeue；当前 poll timeout 阻塞 AE/AWB 闭环。
+- [x] 打通 `/dev/video18` 动态 stats；普通用户下实时线程失败时回退 `SCHED_OTHER`。
 - [ ] 在明亮、普通、较暗三种实景验证 AE/AWB，并比较亮度、色偏和新增延迟。
 
 完成标准：形成稳定性测试结果和性能对比数据，并能指出当前主要延迟与带宽瓶颈。
 
-Stage 6 RKAIQ 子任务记录（2026-08-28）：module-info、IQ 选择、服务初始化、online
-30.05 fps 和停止后的 PM 已通过；动态 stats 尚未出队，暗绿修复未验收。详细证据见
-`stage6_rkaiq_3a_validation.md`。不得因服务可启动而将 AE/AWB 标记完成。
+Stage 6 RKAIQ 子任务记录（2026-08-28）：module-info、IQ、online、dynamic stats、
+AE/AWB 算法执行和 PM 已通过。暗场 AE 在 1 秒内将 exposure/gain 推至场景上限；
+三种物理场景的最终画质仍待用户验收。详细证据见
+`stage6_rkaiq_3a_validation.md`。
 
 ## 阶段 7：AI 感知与业务扩展（可选）
 

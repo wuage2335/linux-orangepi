@@ -44,8 +44,8 @@ queue overrun，Windows D3D11 稳定显示，三次端到端延迟为70–100ms�
 Task 8 packet timing与参数矩阵推荐jitter30ms、GOP30、queue2。Task 9 shared
 RTSP、实时时钟PTS、GStreamer/VLC重连和阶段5总回归也已完成。
 
-Stage 6 已完成私有 RKAIQ 构建、module-info、IQ 兼容、固定焦点和单摄 online
-验证；动态 `/dev/video18` stats 尚未出队，所以 AE/AWB 和暗绿修复仍未验收。
+Stage 6 已完成私有 RKAIQ、module-info、IQ、固定焦点、单摄 online、动态 stats
+和非 root AE/AWB 算法验证；明亮/普通/较暗三种实景的最终画质仍待用户验收。
 
 ## 协作约束
 

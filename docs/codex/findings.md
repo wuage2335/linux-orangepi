@@ -7,9 +7,11 @@
   ISP3 params/stats 布局差异。
 - 最小兼容后，RKAIQ 可稳定初始化，单摄 online `/dev/video11` 为 30.05 fps，
   停止后 PM 回到 suspended/0。
-- 当前真正阻塞是 `/dev/video18` stats 不 dequeue；AE/AWB 只有初始结果，不能
-  形成自动闭环。v12 曝光保持 150、gain 16；旧同版本 OV13855 IQ A/B 同样无
-  动态 stats，说明问题不只在 OV13850 JSON 转换。
+- 内核 debug=4 证明前 4 个 stats buffer 已完成，但普通用户下 `SCHED_RR`
+  poll 线程创建失败且旧代码忽略返回值，buffer 未 DQBUF/QBUF。v13 回退
+  `SCHED_OTHER` 后，AE/AWB 动态闭环成立。
+- 暗场 AE 在 1 秒内把 exposure 150->2995、gain 16->248、VBLANK 96->1449；
+  AWB 连续约 90 帧执行。亮场/普通场仍需用户提供真实场景做画质验收。
 - 私有运行方式必须保留：不覆盖系统 librkaiq、不修改 `/etc/iqfiles`、不自动
   安装 service。完整证据见 `stage6_rkaiq_3a_validation.md`。
 
