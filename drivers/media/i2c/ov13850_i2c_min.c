@@ -14,6 +14,11 @@
 #include <linux/property.h>
 #include <linux/videodev2.h>
 #include <linux/pm_runtime.h>
+#include <linux/rk-camera-module.h>
+#include <linux/uaccess.h>
+#ifdef CONFIG_COMPAT
+#include <linux/compat.h>
+#endif
 #include <media/v4l2-ctrls.h>
 
 /*
@@ -130,6 +135,10 @@ struct ov13850_mode {
  */
 struct ov13850_min {
 	struct i2c_client *client;
+	u32 module_index;
+	const char *module_facing;
+	const char *module_name;
+	const char *len_name;
 	struct clk *xvclk;
 	struct gpio_desc *power_gpio;
 	struct gpio_desc *reset_gpio;
@@ -1946,6 +1955,62 @@ static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static void ov13850_min_get_module_inf(struct ov13850_min *cam,
+				       struct rkmodule_inf *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strscpy(inf->base.sensor, "ov13850", sizeof(inf->base.sensor));
+	strscpy(inf->base.module, cam->module_name,
+		sizeof(inf->base.module));
+	strscpy(inf->base.lens, cam->len_name, sizeof(inf->base.lens));
+}
+
+static long ov13850_min_ioctl(struct v4l2_subdev *sd,
+			      unsigned int cmd, void *arg)
+{
+	struct ov13850_min *cam = to_ov13850_min(sd);
+
+	switch (cmd) {
+	case RKMODULE_GET_MODULE_INFO:
+		ov13850_min_get_module_inf(cam, arg);
+		return 0;
+	default:
+		return -ENOIOCTLCMD;
+	}
+}
+
+#ifdef CONFIG_COMPAT
+static long ov13850_min_compat_ioctl32(struct v4l2_subdev *sd,
+				       unsigned int cmd,
+				       unsigned long arg)
+{
+	void __user *up = compat_ptr(arg);
+	struct rkmodule_inf *inf;
+	long ret;
+
+	if (cmd != RKMODULE_GET_MODULE_INFO)
+		return -ENOIOCTLCMD;
+
+	inf = kzalloc(sizeof(*inf), GFP_KERNEL);
+	if (!inf)
+		return -ENOMEM;
+
+	ret = ov13850_min_ioctl(sd, cmd, inf);
+	if (!ret && copy_to_user(up, inf, sizeof(*inf)))
+		ret = -EFAULT;
+	kfree(inf);
+
+	return ret;
+}
+#endif
+
+static const struct v4l2_subdev_core_ops ov13850_core_ops = {
+	.ioctl = ov13850_min_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl32 = ov13850_min_compat_ioctl32,
+#endif
+};
+
 static const struct v4l2_subdev_video_ops ov13850_video_ops = {
 	.g_frame_interval = ov13850_min_g_frame_interval,
 	.s_stream = ov13850_min_s_stream,
@@ -1962,6 +2027,7 @@ static const struct v4l2_subdev_pad_ops ov13850_pad_ops = {
 };
 
 static const struct v4l2_subdev_ops ov13850_subdev_ops = {
+	.core = &ov13850_core_ops,
 	.video = &ov13850_video_ops,
 	.pad = &ov13850_pad_ops,
 };
@@ -2001,7 +2067,9 @@ static int ov13850_min_probe(struct i2c_client *client,
 			     const struct i2c_device_id *id)
 {
 	struct device *dev = &client->dev;
+	struct device_node *node = dev->of_node;
 	struct ov13850_min *cam;
+	char facing[2] = {};
 	u32 chip_id = 0;
 	u32 revision = 0;
 	int ret;
@@ -2023,6 +2091,18 @@ static int ov13850_min_probe(struct i2c_client *client,
 	cam = devm_kzalloc(dev, sizeof(*cam), GFP_KERNEL);
 	if (!cam)
 		return -ENOMEM;
+
+	ret = of_property_read_u32(node, RKMODULE_CAMERA_MODULE_INDEX,
+				   &cam->module_index);
+	ret |= of_property_read_string(node, RKMODULE_CAMERA_MODULE_FACING,
+				       &cam->module_facing);
+	ret |= of_property_read_string(node, RKMODULE_CAMERA_MODULE_NAME,
+				       &cam->module_name);
+	ret |= of_property_read_string(node, RKMODULE_CAMERA_LENS_NAME,
+				       &cam->len_name);
+	if (ret)
+		return dev_err_probe(dev, -EINVAL,
+				     "missing Rockchip camera module metadata\n");
     // 绑定I2C客户端和摄像头设备结构体
 	cam->client = client;
 	cam->current_reg = OV13850_CHIP_ID_REG;
@@ -2112,6 +2192,13 @@ static int ov13850_min_probe(struct i2c_client *client,
 	cam->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
 	cam->pad.flags = MEDIA_PAD_FL_SOURCE;
+
+	if (!strcmp(cam->module_facing, "back"))
+		facing[0] = 'b';
+	else
+		facing[0] = 'f';
+	snprintf(cam->sd.name, sizeof(cam->sd.name), "m%02d_%s_ov13850 %s",
+		 cam->module_index, facing, dev_name(cam->sd.dev));
 
 	ret = media_entity_pads_init(&cam->sd.entity, OV13850_NUM_PADS, &cam->pad);
 	if (ret) {
