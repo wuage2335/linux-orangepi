@@ -40,6 +40,21 @@
 - `ov13850_opi5pro_learning/streaming/src/live_pts_clock.hpp`：按真实单调时间生成
   RTSP PTS，消除30.05fps与名义30fps造成的长期漂移。
 
+## RKAIQ与3A
+
+- `ov13850_opi5pro_learning/rkaiq/src/rkmodule_info_probe.c`：验证 Rockchip
+  module-info ioctl 返回的 sensor/module/lens 元数据。
+- `ov13850_opi5pro_learning/rkaiq/src/rkmodule_info_preload.c`：旧活动内核的受控
+  module-info 兼容 shim，仅在显式环境开关下拦截目标 ioctl。
+- `ov13850_opi5pro_learning/rkaiq/scripts/fetch_build_rkaiq.sh`：固定上游提交、同步
+  当前必要 UAPI、交叉构建并生成私有 bundle。
+- `ov13850_opi5pro_learning/rkaiq/scripts/prepare_compatible_iq.sh`：把系统 IQ 读取为
+  私有副本，转换旧解析器所需模块键和枚举，不修改 `/etc/iqfiles`。
+- `ov13850_opi5pro_learning/rkaiq/scripts/run_rkaiq_local.sh`：设置私有库、shim、IQ
+  路径与单摄 online 模式后启动 3A server。
+- `ov13850_opi5pro_learning/rkaiq/patches/0001-ov13850-learning-compat.patch`：记录
+  RKAIQ 实体名、固定焦点、online 和 ISP3 ABI 的最小兼容改动。
+
 ## 推荐阅读顺序
 
 ```text
@@ -49,4 +64,5 @@ ov13850_i2c_min.c
 -> mpp_encoder_core.hpp
 -> gst_rtp_sink.cpp / gst_rtsp_server.cpp
 -> v4l2_mpp_rtp_sender.cpp / v4l2_mpp_rtsp_server.cpp
+-> rkmodule_info_preload.c / prepare_compatible_iq.sh / RKAIQ compatibility patch
 ```

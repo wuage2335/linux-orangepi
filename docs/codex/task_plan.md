@@ -176,8 +176,18 @@ queue2、MTU1200、DMA-BUF和GStreamer 30ms接收缓存。手机播放由用户�
 - 对比拷贝路径、DMA-BUF 路径以及启用/绕过 RGA 的差异。
 - 执行持续推流、反复启停、网络抖动和异常断开测试。
 - 整理常见故障的分层定位方法。
+- [x] 建立固定提交的私有 RKAIQ v3.0x9.1 构建、bundle、校验和与回滚边界。
+- [x] 给学习驱动补 Rockchip module-info ioctl；旧活动内核使用受控 shim 验证。
+- [x] 修复 IQ 键/枚举、固定焦点 AF、单摄 online 模式和 ISP3 最小 ABI 差异。
+- [x] RKAIQ 初始化、等待 stream event、1920x1080 NV12 30.05 fps 与 PM 回归通过。
+- [ ] 打通 `/dev/video18` 动态 ISP stats dequeue；当前 poll timeout 阻塞 AE/AWB 闭环。
+- [ ] 在明亮、普通、较暗三种实景验证 AE/AWB，并比较亮度、色偏和新增延迟。
 
 完成标准：形成稳定性测试结果和性能对比数据，并能指出当前主要延迟与带宽瓶颈。
+
+Stage 6 RKAIQ 子任务记录（2026-08-28）：module-info、IQ 选择、服务初始化、online
+30.05 fps 和停止后的 PM 已通过；动态 stats 尚未出队，暗绿修复未验收。详细证据见
+`stage6_rkaiq_3a_validation.md`。不得因服务可启动而将 AE/AWB 标记完成。
 
 ## 阶段 7：AI 感知与业务扩展（可选）
 
@@ -194,7 +204,7 @@ queue2、MTU1200、DMA-BUF和GStreamer 30ms接收缓存。手机播放由用户�
 ## 当前决策
 
 - 后续所有阶段按学习陪练模式推进，不默认由 Codex 直接完成实现。
-- 阶段 0-5 已完成，下一主线为阶段 6“性能测量与稳定性”。
+- 阶段 0-5 已完成；阶段 6 正在处理 RKAIQ 动态 stats 与 AE/AWB 闭环。
 - 正式 `ov13850.c` 作为主学习和交付驱动，`ov13850_i2c_min.c` 仅用于寄存器验证与故障定位。
 - 第一版固定为 `1080p30 + H.264 + RTP/RTSP`，链路稳定后再提高分辨率或接入 AI。
 - RGA 是按需节点，不需要缩放、旋转或格式转换时直接绕过。

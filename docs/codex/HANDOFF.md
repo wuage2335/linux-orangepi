@@ -7,7 +7,8 @@
 这是学习项目。用户是主要实践者；Codex 负责原理讲解、拆分步骤、审查结果和
 诊断。代码或板端修改前先说明目标、文件和风险；未经用户明确授权，不得一次性
 代写完整阶段。阶段 4 已完成官方 MPP、文件编码、实时 copy 和 DMA-BUF 验证；
-阶段 5 的 RTP/UDP、packet timing、RTSP和重连已通过，下一主线为阶段6。任何
+阶段 5 的 RTP/UDP、packet timing、RTSP和重连已通过，阶段6正在进行RKAIQ/3A
+接入。任何
 完成结论都必须有构建、码流解码或实机日志证据。
 
 ## 1. 当前状态
@@ -45,9 +46,23 @@
 - 2026-08-28总回归：RTP 300帧30.03fps、0 timeout/drop/overrun；RTSP两次
   客户端各解码176帧；阶段4 H.264/H.265、copy/DMA-BUF和官方decoder均通过；
   PM suspended/0且无新增CSI/ISP/MPP/IOMMU fault。
+- Stage 6 已固定 RKAIQ `v3.0x9.1`、提交 `5af997da2442...`，并完成私有
+  aarch64 bundle、module-info shim、IQ 兼容转换、固定焦点 AF 和单摄 online
+  兼容。服务初始化及 `/dev/video11` 30.05 fps 通过，系统库和 `/etc/iqfiles`
+  未被覆盖。
+- Stage 6 当前阻塞是 `/dev/video18` stats buffer 不 dequeue。动态 AE/AWB 尚未
+  闭环，暗绿问题未验收；不要把初始曝光/AWB 参数或静态画面当作 3A 成功证据。
+- 板端收尾状态：RKAIQ 已停止，sensor PM `suspended/0`，controls 恢复
+  `exposure=1536`、`analogue_gain=16`。详细过程见
+  `docs/codex/stage6_rkaiq_3a_validation.md`。
+- 3A private runtime 活动时的 DMA-BUF/MPP/RTP 回归为 300 帧、30.04 fps、
+  0 timeout/drop/queue overrun、10 IDR；退出后 PM suspended/0，fault check 通过。
+- 含正式 module-info ioctl 的候选 Image 已独立构建，SHA256 为
+  `cf75d6d2a0f40f455c123d8a1067aab607b14ed26be81ce44344bd68e9f63e61`；未部署、
+  未重启。活动 `/boot/Image` 仍是前述稳定基线。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
-- 当前分支：`main`；阶段 2 学习驱动源码提交为
+- Stage 6 开发分支：`codex/stage6-rkaiq-3a`；阶段 2 学习驱动源码提交为
   `592d4171c feat(ov13850): complete stage 2 learning driver`。验证文档提交见最新
   `git log`；继续前始终重新读取 `git status -sb`。
 

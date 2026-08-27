@@ -988,7 +988,39 @@ reset，时钟回退时保持PTS不倒退。RTP/UDP既有90kHz固定时间戳路
 VLC默认约400ms，只作为兼容性客户端；低延迟验收使用GStreamer。手机测试由用户
 明确移为可选项。
 
-## 26. 新问题记录模板
+## 26. RKAIQ 接入的连续兼容问题（部分解决，2026-08-28）
+
+### 26.1 现象
+
+旧 `rk3588` RKAIQ 初次接入依次出现 `ENOTTY`、ADRC 初始化 SIGSEGV、AF prepare
+失败、主路径 select timeout 和动态 AE/AWB 不更新。
+
+### 26.2 已定位根因与修复
+
+- 活动内核学习驱动缺 module-info ioctl：源码已补正式 ioctl；不重启验证使用显式
+  开关的 LD_PRELOAD shim。
+- AArch64 ioctl 命令被符号扩展：shim 按低 32 位比较。
+- 2024 IQ 使用 `adrc_calib_v11` 等新键，2022 解析器需要
+  `adrc_calib_V2` 等键：只转换私有 IQ 副本。
+- 模组无 VCM，旧 AF handler 固定请求连续 AF：无 focus support 时禁用 AF。
+- 单摄被 `setMulCamConc` 和 multiplex 探测切到 readback：显式 online 模式下
+  保留 no-readback，恢复 `/dev/video11` 30.05 fps。
+- 当前内核 ISP3 params/stats 各新增 `exposure`/`params_id`：给旧用户态头补最小
+  ABI 字段，不能整体替换内核 UAPI，否则会丢 RKAIQ 私有算法 ID。
+
+### 26.3 当前阻塞
+
+`/dev/video18` 报告 16172 字节 stats buffer，RKAIQ 可申请 buffer 并 STREAMON，
+但运行期持续 poll timeout，没有 dequeue。AE/AWB 因此只有初始化值，不是自动
+闭环。旧版本自带 OV13855 ISP3x IQ 的 A/B 结果相同，排除单一 JSON 转换问题。
+
+### 26.4 安全结论
+
+当前不得安装 systemd 服务或覆盖系统库。板端已停止 RKAIQ，恢复曝光 1536、增益
+16，PM 为 suspended/0。完整日志、量化值和下一步见
+`docs/codex/stage6_rkaiq_3a_validation.md`。
+
+## 27. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

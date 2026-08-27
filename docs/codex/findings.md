@@ -1,5 +1,18 @@
 # linux-orangepi 阅读发现
 
+## 2026-08-28 RKAIQ/3A 接入边界
+
+- 当前 IQ 文件、学习驱动和 2022 RKAIQ 不属于同一 ABI/JSON 世代。直接运行依次
+  暴露 module-info ioctl、ADRC 空指针、无 VCM 的 AF prepare、readback 误判和
+  ISP3 params/stats 布局差异。
+- 最小兼容后，RKAIQ 可稳定初始化，单摄 online `/dev/video11` 为 30.05 fps，
+  停止后 PM 回到 suspended/0。
+- 当前真正阻塞是 `/dev/video18` stats 不 dequeue；AE/AWB 只有初始结果，不能
+  形成自动闭环。v12 曝光保持 150、gain 16；旧同版本 OV13855 IQ A/B 同样无
+  动态 stats，说明问题不只在 OV13850 JSON 转换。
+- 私有运行方式必须保留：不覆盖系统 librkaiq、不修改 `/etc/iqfiles`、不自动
+  安装 service。完整证据见 `stage6_rkaiq_3a_validation.md`。
+
 ## 2026-08-28 RTSP实时PTS与播放器边界
 
 - RKISP实采约30.05fps，不能长期使用`frame_index / 30`作为RTSP实时PTS。该做法

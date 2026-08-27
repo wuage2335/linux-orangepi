@@ -1,5 +1,20 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-28 Stage 6 RKAIQ/3A
+
+- 完成学习驱动 Rockchip module-info ioctl、compat ioctl 与源代码契约测试。
+- 固定并交叉构建官方 RKAIQ `rk3588` 提交 `5af997da2442...`，生成私有 bundle。
+- 通过 core/gdb 定位并修复 ADRC JSON 空指针；处理固定焦点 AF、AArch64 ioctl
+  符号扩展、实体名、mainpath、单摄 online 与 ISP3 最小 ABI。
+- 板端验证 15 秒无流等待不崩溃、90 帧和 360 帧 online 采集均为 30.05 fps。
+- 动态 AE/AWB 尚未完成：stats 节点启动但不 dequeue。板端已停止服务并恢复
+  exposure 1536/gain 16，PM suspended/0。
+- 3A runtime 与阶段5 DMA-BUF/MPP/RTP 联合回归通过：300帧、30.04fps、
+  0 timeout/drop/overrun、10 IDR，fault check 为 OK。
+- 独立 `O=` 完整构建候选 Image 成功；`ov13850_min_ioctl` 与 compat 符号存在，
+  Image SHA256 为 `cf75d6d2a0f40f455c123d8a1067aab607b14ed26be81ce44344bd68e9f63e61`。
+  候选未部署，板端未重启。
+
 ## 2026-08-28 阶段 5 Task 9/10 收口
 
 - 实现shared RTSP server：单摄像头、单MPP encoder持续运行，客户端连接时补发

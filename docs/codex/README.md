@@ -22,6 +22,7 @@
 16. [`stage5_rtp_streaming_validation.md`](stage5_rtp_streaming_validation.md)：实时 RTP、Windows D3D11 播放和端到端延迟证据。
 17. [`stage5_rtsp_recovery_validation.md`](stage5_rtsp_recovery_validation.md)：shared RTSP、实时 PTS 修复、重连与五组延迟证据。
 18. [`camera_pipeline_quantitative_results.md`](camera_pipeline_quantitative_results.md)：阶段 0–5 量化结果、公式、测量命令与结论边界。
+19. [`stage6_rkaiq_3a_validation.md`](stage6_rkaiq_3a_validation.md)：RKAIQ/3A 接入、兼容修复、板端结果和动态 stats 阻塞。
 
 ## 当前项目主线
 
@@ -42,6 +43,9 @@ lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV1
 queue overrun，Windows D3D11 稳定显示，三次端到端延迟为70–100ms。Stage 5
 Task 8 packet timing与参数矩阵推荐jitter30ms、GOP30、queue2。Task 9 shared
 RTSP、实时时钟PTS、GStreamer/VLC重连和阶段5总回归也已完成。
+
+Stage 6 已完成私有 RKAIQ 构建、module-info、IQ 兼容、固定焦点和单摄 online
+验证；动态 `/dev/video18` stats 尚未出队，所以 AE/AWB 和暗绿修复仍未验收。
 
 ## 协作约束
 

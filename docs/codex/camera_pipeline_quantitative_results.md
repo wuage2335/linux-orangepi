@@ -1,6 +1,6 @@
 # RK3588 摄像头链路量化结果与测量方法
 
-日期：2026-08-25
+日期：2026-08-28
 
 ## 1. 文档目的
 
@@ -368,3 +368,22 @@ fixed-30fps drift    = about +95 ms/min
 - `docs/codex/mpp_dmabuf_feasibility.md`
 - `docs/codex/stage5_rtp_streaming_validation.md`
 - `docs/codex/stage5_rtsp_recovery_validation.md`
+
+## 10. Stage 6 RKAIQ/3A 当前量化结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 私有 RKAIQ | v3.0x9.1，commit `5af997da2442...` |
+| 无流初始化 | 连续等待 15 秒，timeout 124，无 SIGSEGV |
+| online 单次采集 | 90 帧，30.05 fps，279,936,000 bytes |
+| online 持续采集 | 360 帧，12 秒，30.05 fps |
+| 3A + MPP/RTP | 300 帧，30.04 fps，0 timeout/drop/overrun，10 IDR |
+| 当前 IQ 静态输出 | Y mean 0.005，U/V mean 128.000 |
+| 手动曝光瞬态 | Y mean 0.937，U 128.766，V 128.011 |
+| 动态 controls | exposure 150、gain 16，未随 12 秒场景更新 |
+| stats | `/dev/video18` buffer 16172 bytes，但运行期无 dequeue |
+| 停止后 PM | suspended，runtime_usage 0 |
+
+亮度/色度由 `capture_image_stats.sh` 分别扫描 NV12 的 Y、U、V plane 得到；FPS 来自
+`v4l2-ctl --stream-poll`。动态 stats 尚未通过，因此这些数据是故障边界，不是
+AE/AWB 验收结果。完整过程见 `stage6_rkaiq_3a_validation.md`。
