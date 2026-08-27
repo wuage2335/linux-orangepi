@@ -54,6 +54,8 @@ grep -F 'timeouts=0 dropped=0' "$LOG" >/dev/null ||
 grep -F 'rtp_clock_rate=90000' "$LOG" >/dev/null ||
 	fail "missing RTP clock rate"
 grep -Eq 'queue_overruns=[0-9]+' "$LOG" || fail "missing queue overrun count"
+grep -F 'congestion_events=0 congestion_idr_requests=0' "$LOG" >/dev/null ||
+	fail "unexpected congestion recovery counters"
 grep -F 'STREAM_RTP_OK' "$LOG" >/dev/null || fail "missing success marker"
 
 PM_ROOT=/sys/bus/i2c/devices/3-0010/power

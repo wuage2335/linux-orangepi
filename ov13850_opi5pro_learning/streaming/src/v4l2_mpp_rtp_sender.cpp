@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "congestion_idr_controller.hpp"
 #include "gst_rtp_sink.hpp"
 #include "mpp_encoder_core.hpp"
 #include "v4l2_capture.hpp"
@@ -144,6 +145,7 @@ int main(int argc, char **argv)
 		V4L2Capture capture(command.device.c_str(), memory_mode);
 		MppEncoder encoder(encoder_config);
 		GstRtpSink rtp_sink(rtp_config);
+		camera_streaming::CongestionIdrController congestion(30);
 		EncoderStats stats;
 		encoder.write_header(rtp_sink, stats);
 		capture.start();
@@ -190,6 +192,13 @@ int main(int argc, char **argv)
 				encoder.encode_frame(index, final_frame, rtp_sink, stats);
 			}
 			rtp_sink.throw_on_bus_error();
+			if (congestion.observe(rtp_sink.queue_overruns(), index)) {
+				encoder.request_idr();
+				std::cerr << "RTP_QUEUE_CONGESTION frame=" << index
+					  << " overruns=" << rtp_sink.queue_overruns()
+					  << " request_idr=" << congestion.idr_requests()
+					  << '\n';
+			}
 			++frames_sent;
 		}
 
@@ -215,6 +224,9 @@ int main(int argc, char **argv)
 			  << " encoded_bytes=" << stats.encoded_bytes << '\n';
 		std::cout << "rtp_clock_rate=90000 timestamp_step=3000"
 			  << " queue_overruns=" << rtp_sink.queue_overruns() << '\n';
+		std::cout << "congestion_events=" << congestion.overrun_events()
+			  << " congestion_idr_requests=" << congestion.idr_requests()
+			  << '\n';
 		std::cout << std::fixed << std::setprecision(2)
 			  << "elapsed_s=" << seconds
 			  << " loop_fps=" << (seconds > 0.0 ? frames_sent / seconds : 0.0)
