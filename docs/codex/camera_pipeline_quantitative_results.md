@@ -295,6 +295,22 @@ mean    = (100 + 70 + 100) / 3 = 90 ms
 当前画面偏暗偏绿来自未运行 RKAIQ 3A/IQ：exposure 为1536/1648，analogue gain
 停在最小值16。该问题在 RTP 前的 RKISP NV12 已存在，不计入网络时延失败。
 
+### 7.5 RTP packet timing与参数矩阵
+
+120帧pcap共3205个RTP包，sequence gap和内核capture drop均为0。120个唯一
+timestamp组全部带marker；帧间90kHz timestamp增量为2999/3000/3001，平均
+2999.99，符合30fps。
+
+| Jitter | 延迟样本 | CPU | Max RSS | 结论 |
+| ---: | --- | ---: | ---: | --- |
+| 100ms | 200ms；另观察约120ms | 7% | 28,624KB | 延迟最高 |
+| 50ms | 130/140ms | 6% | 28,604KB | 稳定但高于30ms |
+| 30ms | 70/100/100ms | 7% | 28,596KB | 推荐 |
+| 10ms | 100ms | 7% | 28,664KB | 无额外收益，容错更低 |
+
+GOP60为15个IDR/900帧，GOP30为30个；两者均30.04fps、0 drop/overrun。queue1
+同样稳定但未降低延迟，因此推荐 `jitter30 + GOP30 + queue2`。
+
 ## 8. 数据可信度规则
 
 1. **FPS**：持续帧数除以 `steady_clock` elapsed，或采用 `v4l2-ctl` 连续输出；

@@ -918,7 +918,35 @@ MPP、RTP 和 D3D11 只编码、传输和显示已有 NV12，不负责白平衡�
 RKAIQ runtime、让 IQ 文件匹配 sensor entity，并补齐学习驱动所需 Rockchip module
 ioctl。该工作应作为独立 ISP 3A/IQ 项目处理，不能用播放器色彩滤镜掩盖。
 
-## 24. 新问题记录模板
+## 24. Windows tshark 可离线解析但无法抓包（已绕过，2026-08-27）
+
+### 24.1 现象
+
+winget安装Wireshark 4.6.8后，`tshark`和`dumpcap`可执行，但：
+
+```text
+dumpcap: Unable to load Npcap (wpcap.dll)
+```
+
+winget没有Wireshark Foundation官方Npcap包。不能把缺抓包驱动误判为RTP无数据。
+
+### 24.2 处理方法
+
+- 不从非官方来源自动安装内核抓包驱动；
+- 板端安装Ubuntu `tcpdump` 4.99.1；
+- 在实际出口 `wlan0` 上只捕获 `udp dst port 5004`；
+- 将pcap复制回Windows，使用tshark离线 `-d udp.port==5004,rtp` 解码。
+
+安装tcpdump前后 `/boot/uInitrd` SHA均为
+`ba7c16a30841788a9237d9c344d31533ed1ff81f3a1eb1289be8f224d78d741b`，
+没有再次触发initramfs覆盖。
+
+### 24.3 验证
+
+120帧流捕获3205个RTP包、tcpdump kernel drop 0；tshark解析出固定SSRC、payload
+96、sequence gap 0、120个timestamp组和平均2999.99的90kHz帧间增量。
+
+## 25. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

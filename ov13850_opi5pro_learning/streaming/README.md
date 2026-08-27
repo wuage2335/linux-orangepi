@@ -122,4 +122,25 @@ STREAM_RTP_OK
 - Windows 成功协商 H.264 High 1920x1080@30，并使用 D3D11 NV12 显示；
 - 三次同屏计时样本为 100 ms、70 ms、100 ms；
 - 当前图像偏暗偏绿来自未运行 RKAIQ 3A/IQ，不是 RTP/MPP 解码问题；
-- 本阶段后续工作为 packet timestamp 抓包、低延迟参数矩阵和 RTSP 重连。
+- RTP packet timing和低延迟参数矩阵已完成；本阶段后续工作为RTSP重连。
+
+## Recommended RTP Baseline
+
+Task 8 实测推荐：
+
+```text
+receiver jitter buffer = 30 ms
+encoder GOP            = 30 frames
+sender queue           = 2 buffers, downstream leaky
+RTP MTU                = 1200
+RTP clock              = 90000
+CBR target             = 8 Mbps
+B frames               = 0
+```
+
+100/50/30/10ms jitter实测延迟分别为约200、130–140、70–100、100ms；所有组
+均30.04fps且0 timeout/drop/overrun。10ms没有比30ms继续降低延迟，queue1也没有
+带来可见收益，因此保留30ms和queue2的稳定性余量。
+
+GOP60单次重连可立即恢复，但理论最坏要等约2秒自然IDR；GOP30把该上限缩短为
+约1秒，适合当前低延迟恢复目标。

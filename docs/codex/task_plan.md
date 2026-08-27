@@ -148,7 +148,11 @@ Raw Annex-B 输入侧 FPS 可能被 FFmpeg 猜测为25；MPP 配置与 PTS 使�
 - [x] typed MPP packet sink 与共享 V4L2 DMA-BUF capture。
 - [x] 1080p30实时 RTP：1800帧、30.05fps、0 timeout/drop/queue overrun。
 - [x] 同屏端到端延迟：100/70/100ms，平均约90ms。
-- [ ] 使用抓包进一步验证 RTP sequence、marker和90kHz timestamp增量。
+- [x] 抓包验证：3205个RTP包、0 sequence gap，120个timestamp组全部有marker，
+  90kHz帧间增量平均2999.99。
+- [x] jitter 100/50/30/10ms矩阵；推荐30ms。
+- [x] GOP60/30和queue2/1矩阵；推荐GOP30、queue2。
+- [x] queue overrun IDR冷却控制器及正常路径板端回归。
 - [ ] RTSP shared server、客户端断开重连和关键帧恢复。
 
 完成标准：PC 端稳定播放，端到端延迟可测量，链路断开后能够恢复。

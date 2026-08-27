@@ -1,5 +1,19 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-27 阶段 5 Task 8
+
+- 板端tcpdump抓取120帧实时RTP：3205个包、内核drop 0、sequence gap 0；
+  120个timestamp组全部含marker，90kHz帧间增量平均2999.99。
+- jitter 100/50/30/10ms均900帧、30.04fps、0 timeout/drop/overrun；截图延迟
+  分别为200ms、130–140ms、70–100ms、100ms。推荐30ms。
+- GOP60为15个IDR/900帧，接收重启立即恢复；GOP30为30个IDR，理论最坏恢复
+  上限更短。queue1稳定但未降低延迟，推荐保持queue2。
+- 四组sender CPU为6–7%，最大RSS约28.6MB，停流后PM均suspended/0。
+- 新增queue congestion IDR冷却控制器：首次立即、冷却期合并、到期补发；主机
+  单元测试和板端正常路径300帧回归通过。真实拥塞触发留待网络扰动测试。
+- 推荐RTP基线：jitter30ms、GOP30、queue2、MTU1200、CBR target8Mbps、无B帧。
+- 下一项为Task 9 shared RTSP server和重连恢复。
+
 ## 2026-08-25 阶段 5 RTP里程碑
 
 - 板端 GStreamer 1.20.3 与 Windows GStreamer 1.28.6 环境验证完成；Windows

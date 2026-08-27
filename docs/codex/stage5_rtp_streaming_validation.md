@@ -224,8 +224,123 @@ test_pattern=Disabled
 和 D3D11 输出没有改变颜色。手动提高 analogue gain 可以验证亮度路径，但无法替代
 完整 AWB/IQ。
 
-## 10. 下一步
+## 10. Task 8 RTP packet timing
 
-Task 7 实时 RTP 功能和第一版延迟目标已通过。下一步将暗绿问题作为独立 ISP
-3A/IQ 工作项处理，同时继续 Task 8 的 RTP 时间戳抓包、队列/GOP/jitter 参数记录，
-随后再进入 RTSP 重连验证。
+板端使用 tcpdump 4.99.1 在 `wlan0` 捕获发往 Windows UDP 5004 的120帧实时流，
+再用 Windows tshark 4.6.8离线强制解码为 RTP。
+
+```text
+sender frames=120
+sender elapsed=4.00 s
+sender FPS=30.01
+pcap packets=3205
+pcap size=3,922,413 bytes
+pcap SHA-256=29da5868f3ecf9d63297f1c85164cb2be5245051674c0d3de735df5242a16572
+tcpdump kernel drops=0
+```
+
+RTP字段统计：
+
+```text
+source/destination=192.168.1.10 -> 192.168.1.6:5004
+SSRC=0x9fab6acf
+payload type=96 only
+sequence=1090..4294
+sequence gap events=0
+missing packets=0
+unique timestamp groups=120
+marker packets=121
+timestamp groups containing marker=120/120
+timestamp delta 2999 count=40
+timestamp delta 3000 count=40
+timestamp delta 3001 count=39
+mean timestamp delta=2999.99
+```
+
+2999/3000/3001的交替来自微秒整数PTS换算到90kHz时的舍入，平均值等于30fps
+要求的3000。第一个timestamp组同时包含codec header与首帧，因此marker packet
+总数比timestamp组多1；每个frame timestamp组都至少有一个marker。
+
+原始pcap保存在板端：
+`~/ov13850_opi5pro_learning/stage5/task7-live-rtp/measurements/task8-rtp-baseline.pcap`。
+因文件为3.8MB且可重新生成，仓库只保存统计、路径和SHA。
+
+## 11. Jitter buffer矩阵
+
+保持sender为GOP30、queue2、8Mbps CBR、900帧，只改变Windows
+`rtpjitterbuffer latency`：
+
+| Jitter | 截图延迟 | 平均 | FPS | CPU | Max RSS | Overrun | 实测码率 |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100ms | 200ms；另观察约120ms未截图 | 证据样本200ms | 30.04 | 7% | 28,624KB | 0 | 7.94Mbps |
+| 50ms | 140/130ms | 135ms | 30.04 | 6% | 28,604KB | 0 | 7.96Mbps |
+| 30ms | 70/100/100ms | 90ms | 30.04 | 7% | 28,596KB | 0 | 7.20Mbps |
+| 10ms | 100ms | 100ms | 30.04 | 7% | 28,664KB | 0 | 7.95Mbps |
+
+所有组均900/900帧、0 timeout/drop、PM suspended/0，无停顿、花屏或延迟持续
+增加。不同测试拍摄内容不同，实际码率差异不能归因于jitter设置。
+
+推荐 `latency=30ms`：它取得最低延迟范围并保留约一帧网络抖动容错；10ms没有
+继续降低实测延迟，却减少迟到包余量。
+
+## 12. GOP和发送queue矩阵
+
+| 配置 | IDR/900帧 | 延迟/恢复 | FPS | CPU | Max RSS | Overrun |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| GOP30, queue2 | 30 | 70–100ms | 30.04 | 7% | 28,596KB | 0 |
+| GOP60, queue2 | 15 | 接收重启立即恢复，无花屏 | 30.04 | 6% | 28,600KB | 0 |
+| GOP30, queue1 | 30 | 100ms，正常播放 | 30.04 | 6% | 28,632KB | 0 |
+
+GOP60的单次重连成功证明恢复机制可用，但不能推翻其最坏约2秒等待自然IDR的理论
+上限。GOP30把自然恢复上限缩短为约1秒。queue1未降低实测延迟；queue2保留一帧
+额外调度余量且未造成积帧，因此推荐 `GOP30 + queue2`。
+
+## 13. Queue congestion恢复策略
+
+新增纯C++ `CongestionIdrController`：
+
+- 首次queue overrun立即请求IDR；
+- 30帧冷却期内的新overrun合并为pending；
+- 冷却结束后补发一次IDR，不对每个drop重复请求；
+- overrun计数器重置后重新建立基线。
+
+主机测试覆盖首次、冷却、pending、计数器重置。板端新版sender 300帧黑盒回归：
+
+```text
+queue_overruns=0
+congestion_events=0
+congestion_idr_requests=0
+STREAM_RTP_OK
+```
+
+当前局域网未真实触发overrun，因此“拥塞时实际恢复画面”的实机证据仍属于后续
+网络扰动测试；当前只确认控制逻辑和正常路径没有回归。
+
+## 14. 截图证据
+
+- [jitter100 / 200ms](../stage_5_photo_record/task8/jitter100-200ms.png)
+- [jitter50 / 140ms](../stage_5_photo_record/task8/jitter50-140ms.png)
+- [jitter50 / 130ms](../stage_5_photo_record/task8/jitter50-130ms.png)
+- [jitter30 / 70ms](../stage_5_photo_record/task8/jitter30-70ms.png)
+- [jitter30 / 100ms A](../stage_5_photo_record/task8/jitter30-100ms-a.png)
+- [jitter30 / 100ms B](../stage_5_photo_record/task8/jitter30-100ms-b.png)
+- [jitter10 / 100ms](../stage_5_photo_record/task8/jitter10-100ms.png)
+- [queue1 / 100ms](../stage_5_photo_record/task8/queue1-100ms.png)
+
+图片SHA记录在Git对象中；归档前另使用 `sha256sum` 对每个PNG逐项验证。
+
+## 15. 下一步
+
+Task 8 RTP packet timing和参数矩阵完成。推荐基线固定为：
+
+```text
+jitter buffer=30ms
+GOP=30
+sender queue=2
+MTU=1200
+CBR target=8Mbps
+B frames=0
+```
+
+下一项进入Task 9 shared RTSP server和客户端重连。暗绿问题继续作为独立ISP
+3A/IQ工作项处理。

@@ -39,7 +39,8 @@ lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV1
 阶段 4 已完成官方 MPP、自定义 H.264/H.265、实时 copy 和 DMA-BUF。阶段 5
 已经完成 1080p30 RTP/UDP 实时里程碑：1800 帧 30.05 fps、0 timeout/drop/
 queue overrun，Windows D3D11 稳定显示，三次端到端延迟为70–100ms。Stage 5
-仍为当前阶段，后续是更细的 packet timing/队列调优和 RTSP 重连。
+Task 8 packet timing与参数矩阵也已完成，推荐jitter30ms、GOP30、queue2。
+Stage 5仍为当前阶段，后续是shared RTSP server和断线重连。
 
 ## 协作约束
 

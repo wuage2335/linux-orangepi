@@ -1,14 +1,14 @@
 # RK3588 摄像头链路任务交接文档
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-25（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-27（Asia/Shanghai）。
 
 ## 0. 协作约束
 
 这是学习项目。用户是主要实践者；Codex 负责原理讲解、拆分步骤、审查结果和
 诊断。代码或板端修改前先说明目标、文件和风险；未经用户明确授权，不得一次性
 代写完整阶段。阶段 4 已完成官方 MPP、文件编码、实时 copy 和 DMA-BUF 验证；
-阶段 5 的 RTP/UDP 实时里程碑已通过，当前继续 packet timing、队列调优和 RTSP
-重连。任何完成结论都必须有构建、码流解码或实机日志证据。
+阶段 5 的 RTP/UDP、packet timing和参数调优已通过，当前进入RTSP重连。任何
+完成结论都必须有构建、码流解码或实机日志证据。
 
 ## 1. 当前状态
 
@@ -34,6 +34,8 @@
 - 阶段 5 已新增 typed MPP packet sink、共享 V4L2 capture、GStreamer appsrc RTP
   sink 和实时 DMA-BUF sender。详细量化数据和方法见
   `docs/codex/camera_pipeline_quantitative_results.md`。
+- Task 8抓包为3205个RTP包、0 sequence gap，120个timestamp组全部有marker，
+  90kHz帧间增量平均2999.99。jitter/GOP/queue推荐为30ms/30/2；RTSP未完成。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前分支：`main`；阶段 2 学习驱动源码提交为
