@@ -1,5 +1,18 @@
 # linux-orangepi 阅读发现
 
+## 2026-08-28 RTSP实时PTS与播放器边界
+
+- RKISP实采约30.05fps，不能长期使用`frame_index / 30`作为RTSP实时PTS。该做法
+  每分钟让媒体时间超前约95ms，超过30ms jitter窗口后会固定复现积帧、花屏和
+  卡顿；客户端重连清零时间基，所以会暂时恢复。
+- 服务端queue在75秒调试中保持约33-66ms且无full/leak/overrun；板端本地解码
+  稳定，Wi-Fi为5GHz、-41dBm、TX约390Mbps。根因不是queue泄漏或链路容量。
+- RTSP应按真实单调时钟生成零基PTS；media重新创建时reset，同一个shared media
+  的短暂重连不能把时间轴倒回。
+- GStreamer是当前低延迟基准；VLC播放与重连兼容，但默认约400ms，激进时钟参数
+  反而约600ms，因此VLC不能承担本项目的延迟验收。
+- 手机播放由用户明确移为可选项，不阻塞阶段5完成。
+
 ## 项目定位
 
 - 目标项目名：`linux-orangepi`。

@@ -1,5 +1,20 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-28 阶段 5 Task 9/10 收口
+
+- 实现shared RTSP server：单摄像头、单MPP encoder持续运行，客户端连接时补发
+  codec header并请求IDR，断开不重启采集链路。
+- 自动化两次连接各解码176-178帧，服务端保持同一进程，连接/断开/IDR计数均为2。
+- 首版固定30fps PTS在实际30.05fps采集下每分钟超前约95ms，Windows在40-60秒后
+  出现花屏、卡顿和延迟累积；queue调试无leak，软/硬解码均复现。
+- 新增`LivePtsClock`，RTSP按真实单调时间生成PTS；单元测试覆盖实采间隔、reset和
+  时间回退保护。修复后GStreamer连续两分钟稳定并可正常重连。
+- 五组端到端延迟为60/70/10/160/60ms，平均72ms、中位60ms、最大160ms，无
+  随时间增加趋势。VLC兼容和重连通过，但约400ms，不作为低延迟基准。
+- 阶段4/5总回归通过：H.264/H.265文件和参数矩阵、实时copy/DMA-BUF、官方MPP
+  decoder、RTP 300帧、RTSP双重连均通过；PM suspended/0，无新增fault。
+- 用户明确手机测试不是重点，移为可选项；阶段5关闭，下一主线为阶段6。
+
 ## 2026-08-27 阶段 5 Task 8
 
 - 板端tcpdump抓取120帧实时RTP：3205个包、内核drop 0、sequence gap 0；

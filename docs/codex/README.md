@@ -20,7 +20,8 @@
 14. [`mpp_live_encoding_validation.md`](mpp_live_encoding_validation.md)：V4L2 实时 H.264 copy/DMA-BUF 证据。
 15. [`mpp_dmabuf_feasibility.md`](mpp_dmabuf_feasibility.md)：EXPBUF、EXT_DMA、stride 和所有权结论。
 16. [`stage5_rtp_streaming_validation.md`](stage5_rtp_streaming_validation.md)：实时 RTP、Windows D3D11 播放和端到端延迟证据。
-17. [`camera_pipeline_quantitative_results.md`](camera_pipeline_quantitative_results.md)：阶段 0–5 量化结果、公式、测量命令与结论边界。
+17. [`stage5_rtsp_recovery_validation.md`](stage5_rtsp_recovery_validation.md)：shared RTSP、实时 PTS 修复、重连与五组延迟证据。
+18. [`camera_pipeline_quantitative_results.md`](camera_pipeline_quantitative_results.md)：阶段 0–5 量化结果、公式、测量命令与结论边界。
 
 ## 当前项目主线
 
@@ -29,7 +30,7 @@ OV13850/MIPI -> CSI/DPHY -> CIF/ISP -> V4L2
 -> RGA（按需）-> MPP -> RTP/RTSP -> PC 播放
 ```
 
-阶段 0-4 已完成，当前处于阶段 5“低延迟视频流”。
+阶段 0-5 已完成，下一主线为阶段 6“性能测量与稳定性”。
 
 阶段 2 学习驱动已完成 controls、runtime PM、双模式、TRY/ACTIVE、stream
 lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV12@30、
@@ -39,8 +40,8 @@ lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV1
 阶段 4 已完成官方 MPP、自定义 H.264/H.265、实时 copy 和 DMA-BUF。阶段 5
 已经完成 1080p30 RTP/UDP 实时里程碑：1800 帧 30.05 fps、0 timeout/drop/
 queue overrun，Windows D3D11 稳定显示，三次端到端延迟为70–100ms。Stage 5
-Task 8 packet timing与参数矩阵也已完成，推荐jitter30ms、GOP30、queue2。
-Stage 5仍为当前阶段，后续是shared RTSP server和断线重连。
+Task 8 packet timing与参数矩阵推荐jitter30ms、GOP30、queue2。Task 9 shared
+RTSP、实时时钟PTS、GStreamer/VLC重连和阶段5总回归也已完成。
 
 ## 协作约束
 

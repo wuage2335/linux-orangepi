@@ -946,7 +946,49 @@ winget没有Wireshark Foundation官方Npcap包。不能把缺抓包驱动误判�
 120帧流捕获3205个RTP包、tcpdump kernel drop 0；tshark解析出固定SSRC、payload
 96、sequence gap 0、120个timestamp组和平均2999.99的90kHz帧间增量。
 
-## 25. 新问题记录模板
+## 25. RTSP运行约一分钟后花屏、卡顿和延迟累积（已解决，2026-08-28）
+
+### 25.1 现象
+
+shared RTSP首次连接和重连都能立即出画面，但Windows软/硬解码均在40-60秒后
+出现花屏、卡顿和延迟持续增加。关闭客户端再连接会暂时恢复。UDP约40秒恶化，
+TCP约一分钟恶化。
+
+### 25.2 排除过程
+
+- 服务端持续40,627帧、30.05fps、0 timeout/drop；MPP和摄像头没有停流；
+- queue:6调试75秒，队列保持约33-66ms，无full/leak/overrun；
+- 板端本地RTSP解码75秒稳定；
+- Wi-Fi为5GHz、-41dBm、TX约390Mbps、省电关闭；
+- Windows D3D11和avdec_h264都能复现，排除单一decoder；
+- UDP增量统计约21,670包缺5包（0.023%），不足以解释TCP固定累计延迟。
+
+### 25.3 根因
+
+MPP输出PTS按`frame_index * 1000000 / 30`固定为30.00fps，但RKISP实际采集约
+30.05fps。媒体时间每分钟比真实单调时间超前约95ms，超过30ms接收jitter窗口后，
+接收端不断重排/积压，最终表现为花屏和卡顿。重连会重建时间基，所以只能暂时
+恢复。
+
+### 25.4 修复
+
+新增`LivePtsClock`。RTSP sink不再使用编码器的名义30fps PTS，而是在每个shared
+media首次发送时记录单调时钟原点，此后按真实经过时间生成PTS；media销毁重建时
+reset，时钟回退时保持PTS不倒退。RTP/UDP既有90kHz固定时间戳路径不受影响。
+
+### 25.5 验证
+
+- 单元测试覆盖真实帧间隔、media reset和回退保护；
+- GStreamer TCP软件解码连续两分钟无花屏、卡顿或延迟累计；
+- 五组延迟60/70/10/160/60ms，平均72ms且无单调上升；
+- GStreamer和VLC重连均正常；
+- 服务端21,561帧、717.58秒、30.05fps、0 timeout/drop；
+- 停止后PM suspended/0，无新增CSI/ISP/MPP/IOMMU fault。
+
+VLC默认约400ms，只作为兼容性客户端；低延迟验收使用GStreamer。手机测试由用户
+明确移为可选项。
+
+## 26. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

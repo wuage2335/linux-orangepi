@@ -329,7 +329,7 @@ STREAM_RTP_OK
 
 图片SHA记录在Git对象中；归档前另使用 `sha256sum` 对每个PNG逐项验证。
 
-## 15. 下一步
+## 15. Task 8 收口
 
 Task 8 RTP packet timing和参数矩阵完成。推荐基线固定为：
 
@@ -342,5 +342,6 @@ CBR target=8Mbps
 B frames=0
 ```
 
-下一项进入Task 9 shared RTSP server和客户端重连。暗绿问题继续作为独立ISP
-3A/IQ工作项处理。
+Task 9 shared RTSP server和客户端重连已经完成，详细证据见
+[`stage5_rtsp_recovery_validation.md`](stage5_rtsp_recovery_validation.md)。暗绿问题
+继续作为独立ISP 3A/IQ工作项处理。

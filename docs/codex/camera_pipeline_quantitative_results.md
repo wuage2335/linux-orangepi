@@ -311,6 +311,39 @@ timestamp组全部带marker；帧间90kHz timestamp增量为2999/3000/3001，平
 GOP60为15个IDR/900帧，GOP30为30个；两者均30.04fps、0 drop/overrun。queue1
 同样稳定但未降低延迟，因此推荐 `jitter30 + GOP30 + queue2`。
 
+### 7.6 Shared RTSP、PTS修复和重连
+
+shared RTSP保持单套V4L2/MPP实例，客户端连接时补发codec header并请求IDR。
+首版按固定30fps生成PTS，而实际采集为30.05fps：
+
+```text
+old server frames    = 40,627
+old server elapsed   = 1,352.09 s
+actual cadence       = 30.05 fps
+fixed-30fps drift    = about +95 ms/min
+```
+
+旧版Windows软/硬解码均在40-60秒后花屏、卡顿并累计延迟；服务端queue调试75秒
+无full/leak/overrun，板端本地解码稳定。改用单调实时时钟后，五组同屏延迟为：
+
+| 采样点 | 延迟 |
+| ---: | ---: |
+| 10s | 60ms |
+| 30s | 70ms |
+| 60s | 10ms |
+| 90s | 160ms |
+| 120s | 60ms |
+
+平均72ms，中位60ms，最小10ms，最大160ms；没有随时间增加。服务端一次长会话
+处理21,561帧、717.58秒、30.05fps、0 timeout/drop，并完成两次连接、断开和IDR
+恢复。VLC播放和重连稳定，但默认约400ms，激进时钟参数约600ms，因此VLC只作
+兼容性客户端。
+
+2026-08-28总回归：RTP 300帧30.03fps、0 timeout/drop/overrun；RTSP两次客户端
+各解码176帧；实时MPP copy/DMA-BUF均300帧30.03fps，CPU 7%/6%，copy耗时
+1774.06us/0us；所有H.264/H.265输出由官方MPP decoder解到预期帧数。退出后PM为
+`suspended/0`，无新增CSI/ISP/MPP/RKVENC/MMU/IOMMU fault。
+
 ## 8. 数据可信度规则
 
 1. **FPS**：持续帧数除以 `steady_clock` elapsed，或采用 `v4l2-ctl` 连续输出；
@@ -319,8 +352,8 @@ GOP60为15个IDR/900帧，GOP30为30个；两者均30.04fps、0 drop/overrun。q
 4. **单模块耗时**：只描述被计时调用，不外推为端到端延迟；
 5. **实时正确性**：必须同时满足帧数、sequence drop、timeout、解码、PM和fault检查；
 6. **确定性比较**：只有输入内容相同才比较 SHA；不同时间的实时画面不要求 hash相同；
-7. **阶段状态**：Stage 5 的 RTP 里程碑已通过，但 RTSP 重连尚未完成，整个阶段仍
-   标记为进行中。
+7. **阶段状态**：Stage 5 的 RTP、RTSP、重连、延迟和总回归均已通过；手机播放由
+   用户明确移为可选项，不阻塞阶段完成。
 
 ## 9. 原始证据入口
 
@@ -334,3 +367,4 @@ GOP60为15个IDR/900帧，GOP30为30个；两者均30.04fps、0 drop/overrun。q
 - `docs/codex/mpp_live_encoding_validation.md`
 - `docs/codex/mpp_dmabuf_feasibility.md`
 - `docs/codex/stage5_rtp_streaming_validation.md`
+- `docs/codex/stage5_rtsp_recovery_validation.md`
