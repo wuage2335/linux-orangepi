@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -21,8 +22,13 @@ int ioctl(int fd, unsigned long request, ...)
 	va_start(ap, request);
 	arg = va_arg(ap, void *);
 	va_end(ap);
+	if (getenv("RKAIQ_MODULE_INFO_SHIM_TRACE") &&
+	    !strcmp(getenv("RKAIQ_MODULE_INFO_SHIM_TRACE"), "1"))
+		fprintf(stderr, "RKAIQ_SHIM request=0x%lx expected=0x%lx\n",
+			request, (unsigned long)RKMODULE_GET_MODULE_INFO);
 
-	if (request == RKMODULE_GET_MODULE_INFO &&
+	if ((unsigned int)request ==
+	    (unsigned int)RKMODULE_GET_MODULE_INFO &&
 	    getenv("RKAIQ_MODULE_INFO_SHIM") &&
 	    !strcmp(getenv("RKAIQ_MODULE_INFO_SHIM"), "1")) {
 		struct rkmodule_inf *info = arg;

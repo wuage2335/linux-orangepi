@@ -12,13 +12,20 @@ int main(int argc, char **argv)
 {
 	struct rkmodule_inf info;
 	const char *device;
+	unsigned long request = RKMODULE_GET_MODULE_INFO;
 	int fd;
 
-	if (argc != 2) {
-		fprintf(stderr, "usage: %s </dev/v4l-subdevN>\n", argv[0]);
+	if (argc == 3 && !strcmp(argv[1], "--sign-extended")) {
+		request = (unsigned long)(long)(int)(unsigned int)request;
+		device = argv[2];
+	} else if (argc == 2) {
+		device = argv[1];
+	} else {
+		fprintf(stderr,
+			"usage: %s [--sign-extended] </dev/v4l-subdevN>\n",
+			argv[0]);
 		return 2;
 	}
-	device = argv[1];
 	fd = open(device, O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
 		fprintf(stderr, "ERROR: open %s: %s\n", device, strerror(errno));
@@ -26,7 +33,7 @@ int main(int argc, char **argv)
 	}
 
 	memset(&info, 0, sizeof(info));
-	if (ioctl(fd, RKMODULE_GET_MODULE_INFO, &info) < 0) {
+	if (ioctl(fd, request, &info) < 0) {
 		fprintf(stderr, "ERROR: RKMODULE_GET_MODULE_INFO: %s\n",
 			strerror(errno));
 		close(fd);

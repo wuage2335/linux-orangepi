@@ -20,6 +20,7 @@ install -m 0755 "$OUTPUT/exe/Release/rkaiq_3A_server" "$BUNDLE/bin/"
 install -m 0644 "$OUTPUT/all_lib/Release/librkaiq.so" "$BUNDLE/lib/"
 install -m 0755 "$TOOLS/rkmodule_info_probe" "$BUNDLE/bin/"
 install -m 0644 "$TOOLS/librkmodule_info_preload.so" "$BUNDLE/lib/"
+install -m 0755 "$RKAIQ_ROOT/scripts/prepare_compatible_iq.sh" "$BUNDLE/bin/"
 install -m 0644 "$SOURCE/NOTICE" "$BUNDLE/share/NOTICE"
 
 cat > "$BUNDLE/share/ORIGIN.md" <<EOF

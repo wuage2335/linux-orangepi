@@ -1,0 +1,116 @@
+diff --git a/hwi/isp20/CamHwIsp20.cpp b/hwi/isp20/CamHwIsp20.cpp
+index 2f57441..79811b2 100644
+--- a/hwi/isp20/CamHwIsp20.cpp
++++ b/hwi/isp20/CamHwIsp20.cpp
+@@ -1135,5 +1135,9 @@ XCamReturn CamHwIsp20::initCamHwInfos() {
+                 s_full_info->device_name = std::string(devpath);
+                 s_full_info->sensor_name = std::string(entity_info->name);
++                if (s_full_info->sensor_name == "ov13850_i2c_min 3-0010") {
++                    s_full_info->sensor_name =
++                        std::string("m01_b_ov13850 3-0010");
++                }
+                 s_full_info->parent_media_dev = std::string(sys_path);
+                 parse_module_info(s_full_info);
+                 get_sensor_caps(s_full_info);
+@@ -2538,16 +2542,19 @@ XCamReturn CamHwIsp20::prepare(uint32_t width, uint32_t height, int mode,
+     rk_sensor_full_info_t *s_info = it->second.ptr();
+     int isp_index = s_info->isp_info->logic_id;
+     LOGI_CAMHW_SUBM(ISP20HW_SUBM, "sensor_name(%s) is linked to isp_index(%d)",
+                     sns_name, isp_index);
+ 
++    const char* force_online = getenv("normal_no_read_back");
+     if ((_hdr_mode > 0 && isOnlineByWorkingMode()) ||
+-            (!_linked_to_isp && !mVicapIspPhyLinkSupported)) {
++            (!(force_online && atoi(force_online) > 0) &&
++             !_linked_to_isp && !mVicapIspPhyLinkSupported)) {
+         LOGI_CAMHW_SUBM(ISP20HW_SUBM, "use read back mode!");
+         mNoReadBack = false;
+     }
+ 
+     // multimplex mode should be using readback mode
+-    if (s_info->isp_info->isMultiplex)
++    if (s_info->isp_info->isMultiplex &&
++        !(force_online && atoi(force_online) > 0))
+         mNoReadBack = false;
+ 
+     LOGI_CAMHW_SUBM(ISP20HW_SUBM, "isp hw working mode: %s !", mNoReadBack ? "online" : "readback");
+diff --git a/include/common/rkisp3-config.h b/include/common/rkisp3-config.h
+--- a/include/common/rkisp3-config.h
++++ b/include/common/rkisp3-config.h
+@@ -1041,6 +1041,7 @@ struct isp3x_isp_params_cfg {
+ 	u32 frame_id;
+ 	struct isp3x_isp_meas_cfg meas;
+ 	struct isp3x_isp_other_cfg others;
++	struct sensor_exposure_cfg exposure;
+ } __attribute__ ((packed));
+ 
+ struct isp3x_stat {
+@@ -1068,6 +1069,7 @@ struct isp3x_stat {
+ struct rkisp3x_isp_stat_buffer {
+ 	u32 meas_type;
+ 	u32 frame_id;
++	u32 params_id;
+ 	struct isp3x_stat params;
+ } __attribute__ ((packed));
+ 
+diff --git a/rkaiq_3A_server/rkaiq_3A_server.cpp b/rkaiq_3A_server/rkaiq_3A_server.cpp
+index ae878de..128bc26 100644
+--- a/rkaiq_3A_server/rkaiq_3A_server.cpp
++++ b/rkaiq_3A_server/rkaiq_3A_server.cpp
+@@ -32,10 +32,10 @@
+ #define MAX_MEDIA_NODES                           16
+ 
+ #define IQ_PATH "/etc/iqfiles/"
+ 
+ static int silent = 0;
+-static int width = 2688;
+-static int height = 1520;
++static int width = 2112;
++static int height = 1568;
+ static const char fake_name[32] = "FakeCamera";
+ 
+ struct rkaiq_media_info {
+@@ -126,5 +126,9 @@ int rkaiq_get_media_info(struct rkaiq_media_info *media_info)
+ 
+     sensor_name = rk_aiq_uapi2_sysctl_getBindedSnsEntNmByVd(media_info->mainpath);
++    if ((!sensor_name || !sensor_name[0]) &&
++        !strcmp(media_info->mainpath, "/dev/video11")) {
++        sensor_name = "m01_b_ov13850 3-0010";
++    }
+     if (sensor_name == NULL || strlen(sensor_name) == 0 || !(strstr(sensor_name, fake_name) == NULL)) {
+         fprintf(stderr, "ERR: No sensor attached to %s\n", media_info->mdev_path);
+         media_device_unref (device);
+@@ -145,6 +149,14 @@ static void init_engine(struct rkaiq_media_info *media_info)
+     media_info->aiq_ctx = rk_aiq_uapi2_sysctl_init(media_info->sensor_entity_name,
+-                                                  IQ_PATH, NULL, NULL);
++                                                  getenv("RKAIQ_IQ_PATH") ?
++                                                  getenv("RKAIQ_IQ_PATH") : IQ_PATH,
++                                                  NULL, NULL);
+ 
++    if (media_info->aiq_ctx == NULL) {
++        ERR("rkaiq sysctl init failed for %s\n", media_info->sensor_entity_name);
++        exit(EXIT_FAILURE);
++    }
+-    rk_aiq_uapi2_sysctl_setMulCamConc(media_info->aiq_ctx, 1);
++    if (!(getenv("normal_no_read_back") &&
++          atoi(getenv("normal_no_read_back")) > 0))
++        rk_aiq_uapi2_sysctl_setMulCamConc(media_info->aiq_ctx, 1);
+ 
+     if (rk_aiq_uapi2_sysctl_prepare(media_info->aiq_ctx,
+diff --git a/aiq_core/algo_handlers/RkAiqAfHandle.cpp b/aiq_core/algo_handlers/RkAiqAfHandle.cpp
+--- a/aiq_core/algo_handlers/RkAiqAfHandle.cpp
++++ b/aiq_core/algo_handlers/RkAiqAfHandle.cpp
+@@ -402,6 +402,11 @@ XCamReturn RkAiqAfHandleInt::prepare() {
+     ret = RkAiqHandle::prepare();
+     RKAIQCORE_CHECK_RET(ret, "af handle prepare failed");
+ 
++    RkAiqCore::RkAiqAlgosComShared_t* sharedCom = &mAiqCore->mAlogsComSharedParams;
++    if (!sharedCom->snsDes.lens_des.focus_support) {
++        LOGI_AF("fixed-focus sensor: disable AF algorithm");
++        setEnable(false);
++        return XCAM_RETURN_NO_ERROR;
++    }
+     RkAiqAlgoConfigAf* af_config_int         = (RkAiqAlgoConfigAf*)mConfig;
+-    RkAiqCore::RkAiqAlgosComShared_t* sharedCom = &mAiqCore->mAlogsComSharedParams;
+ 
+     af_config_int->af_mode    = 6;

@@ -25,10 +25,21 @@ fi
 git -C "$SOURCE" fetch --depth 1 origin "$COMMIT"
 git -C "$SOURCE" checkout --detach "$COMMIT"
 [[ $(git -C "$SOURCE" rev-parse HEAD) == "$COMMIT" ]] || exit 1
+PATCH="$RKAIQ_ROOT/patches/0001-ov13850-learning-compat.patch"
+if git -C "$SOURCE" apply --reverse --check "$PATCH" 2>/dev/null; then
+	echo "RKAIQ compatibility patch already applied"
+elif git -C "$SOURCE" diff --quiet && git -C "$SOURCE" diff --cached --quiet; then
+	git -C "$SOURCE" apply "$PATCH"
+else
+	echo "ERROR: RKAIQ source has unexpected local changes: $SOURCE" >&2
+	exit 1
+fi
 
 mkdir -p "$UAPI/linux"
 cp "$KERNEL_ROOT/include/uapi/linux/rk-camera-module.h" "$SOURCE/include/common/rk-camera-module.h"
-cp "$KERNEL_ROOT/include/uapi/linux/rk-video-format.h" "$UAPI/linux/rk-video-format.h"
+for header in rk-camera-module.h rk-video-format.h; do
+	cp "$KERNEL_ROOT/include/uapi/linux/$header" "$UAPI/linux/$header"
+done
 
 cmake -S "$SOURCE" -B "$OUTPUT" -G Ninja \
 	-DCMAKE_SYSTEM_NAME=Linux \
