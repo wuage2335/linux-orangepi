@@ -384,6 +384,7 @@ fixed-30fps drift    = about +95 ms/min
 | AWB | 约90帧连续执行；暗场 gain `(1.7498,1,1,1.6254)` |
 | stats | seq0-3内核完成；v13非root持续DQBUF/QBUF，AE/AWB闭环 |
 | pattern 1/2/3/4 Y mean | 128.132 / 194.793 / 128.815 / 0.000 |
+| pattern 1 视觉检查 | 白/黄/青/绿/品红/红/蓝/黑正确，无全局偏绿或UV交换 |
 | pattern亮/暗 controls | exposure8,gain16,VBLANK96 / exposure2995,gain248,VBLANK1449 |
 | 3A开/关 MPP | 均300帧、9.99s、30.04fps、0 timeout/drop/overrun |
 | 3A额外资源 | 约0.9% CPU、16100KB RSS；sender CPU 3% vs 2% |

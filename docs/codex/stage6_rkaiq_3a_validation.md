@@ -67,6 +67,11 @@ test pattern 4: Y mean 0，exposure2995/gain248/VBLANK1449
 service stop: sensor PM suspended, runtime_usage=0
 ```
 
+Type 1 NV12 转换后的彩条顺序为白、黄、青、绿、品红、红、蓝、黑，目视无全局
+偏绿或 U/V 交换。证据图片为
+[`assets/stage6_ov13850_pattern1.png`](assets/stage6_ov13850_pattern1.png)，SHA256
+为 `b383c90dcc6bc1ca9774f072746271c7420981231d34669dab7bc39e29461813`。
+
 ### 5.2 尚未通过
 
 动态 stats、AE 与 AWB 算法执行已经闭环。尚未完成的是物理明亮、普通和较暗三种
