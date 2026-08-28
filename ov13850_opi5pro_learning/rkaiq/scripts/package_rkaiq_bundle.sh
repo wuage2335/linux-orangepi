@@ -22,6 +22,8 @@ install -m 0755 "$TOOLS/rkmodule_info_probe" "$BUNDLE/bin/"
 install -m 0644 "$TOOLS/librkmodule_info_preload.so" "$BUNDLE/lib/"
 install -m 0755 "$RKAIQ_ROOT/scripts/prepare_compatible_iq.sh" "$BUNDLE/bin/"
 install -m 0755 "$RKAIQ_ROOT/scripts/run_rkaiq_local.sh" "$BUNDLE/bin/"
+install -m 0755 "$RKAIQ_ROOT/scripts/capture_image_stats.sh" "$BUNDLE/bin/"
+install -m 0755 "$RKAIQ_ROOT/scripts/validate_real_scenes.sh" "$BUNDLE/bin/"
 install -m 0644 "$SOURCE/NOTICE" "$BUNDLE/share/NOTICE"
 
 cat > "$BUNDLE/share/ORIGIN.md" <<EOF
