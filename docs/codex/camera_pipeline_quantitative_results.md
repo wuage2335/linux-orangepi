@@ -388,9 +388,12 @@ fixed-30fps drift    = about +95 ms/min
 | pattern亮/暗 controls | exposure8,gain16,VBLANK96 / exposure2995,gain248,VBLANK1449 |
 | 3A开/关 MPP | 均300帧、9.99s、30.04fps、0 timeout/drop/overrun |
 | 3A额外资源 | 约0.9% CPU、16100KB RSS；sender CPU 3% vs 2% |
+| 真实bright | Y/U/V mean 123.808/128.704/127.992，exp1498/gain21/VBLANK96 |
+| 真实normal | Y/U/V mean 121.255/127.872/128.408，exp1997/gain65/VBLANK451 |
+| 真实dark | Y/U/V mean 79.220/127.677/131.985，exp2995/gain248/VBLANK1449 |
 | 停止后 PM | suspended，runtime_usage 0 |
 
 亮度/色度由 `capture_image_stats.sh` 分别扫描 NV12 的 Y、U、V plane 得到；FPS 来自
-`v4l2-ctl --stream-poll`。动态 stats 与算法执行已通过；三种实景的最终主观画质
-和亮场恢复到30fps仍待用户现场验收。完整过程见
+`v4l2-ctl --stream-poll`。动态 stats、三种真实场景 AE/AWB 与画质已通过；剩余
+项目是正常场景同屏端到端延迟补录。完整过程见
 `stage6_rkaiq_3a_validation.md`。

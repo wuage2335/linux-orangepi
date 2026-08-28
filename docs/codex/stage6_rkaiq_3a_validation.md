@@ -103,12 +103,31 @@ v13 暗场 AE 后:  Y mean 19.497, U mean 128.808, V mean 127.343
 当前测量分辨率内没有帧周期或队列积压增量；额外资源约为一个 0.9% CPU、16MB RSS
 的 3A 进程。精确端到端毫秒差仍需用户把摄像头对准同屏计时器后复测。
 
+### 5.4 真实三场景验收
+
+用户于 2026-08-28 10:12 完成真实 bright/normal/dark 采集：
+
+| 场景 | exposure | gain | VBLANK | Y mean | U mean | V mean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| bright | 1498 | 21 | 96 | 123.808 | 128.704 | 127.992 |
+| normal | 1997 | 65 | 451 | 121.255 | 127.872 | 128.408 |
+| dark | 2995 | 248 | 1449 | 79.220 | 127.677 | 131.985 |
+
+AE 随照度降低逐级增加曝光、增益和 VTS；bright/normal 的目标亮度稳定在约 122，
+dark 达到 sensor 上限后仍保持 Y mean 79.220。三帧转为 PNG 后目视检查：bright
+和 normal 为中性灰白，无全局偏绿；dark 在最大增益下有轻微暖紫噪声，但不再
+出现原始绿色覆盖。
+
+原始汇总证据为
+[`assets/stage6_real_scenes_summary.tsv`](assets/stage6_real_scenes_summary.tsv)，
+SHA256 为 `ed9552e60edee677f74358d0e07d33cf4da12f5f06f7621df0a39d9e35977a9c`。
+
 ## 6. 当前安全状态与下一步
 
 板端最终已停止 RKAIQ，恢复 `exposure=1536`、`analogue_gain=16`，PM 为
-`suspended/0`，`video_rkisp.debug` 已恢复 0。下一步由用户在明亮、普通、较暗三种
-实景查看画面并记录 controls/图像统计；验收前不要安装 systemd 服务，也不要把
-私有 bundle 覆盖到系统库。
+`suspended/0`，`video_rkisp.debug` 已恢复 0。真实三场景的 AE/AWB 与画质已通过；
+只剩正常场景同屏端到端延迟需要补录。正式部署前仍不安装 systemd 服务或覆盖
+系统库。
 
 板端已部署带完整现场验收入口的 `runtime-v15`，bundle SHA256 为
 `0ef8f0a32da4516563160656e114ed5cc7f6ed06ee6d5a28fee259dd3a0e6b55`：

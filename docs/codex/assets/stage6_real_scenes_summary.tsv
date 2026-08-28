@@ -1,0 +1,4 @@
+scene	latency_ms	sha256	controls	stats
+bright	unknown	5454314a812115e797c257fa49413163fc9b68c4b8d04014a8ea8522dca84090	exposure: 1498;analogue_gain: 21;vertical_blanking: 96;test_pattern: 0 (Disabled)	Y bytes=2073600 min=30 max=176 mean=123.808;U bytes=518400 min=123 max=160 mean=128.704;V bytes=518400 min=105 max=137 mean=127.992
+normal	unknown	f5308a2e58b83ebfeefbc71d92b576931b2e158a1ba0a6909eb32137767c106c	exposure: 1997;analogue_gain: 65;vertical_blanking: 451;test_pattern: 0 (Disabled)	Y bytes=2073600 min=0 max=255 mean=121.255;U bytes=518400 min=107 max=136 mean=127.872;V bytes=518400 min=121 max=141 mean=128.408
+dark	unknown	d88d70ff74ea810417a6bb42c4c5e771acd29a897f173ca71ffef2c352d78ed1	exposure: 2995;analogue_gain: 248;vertical_blanking: 1449;test_pattern: 0 (Disabled)	Y bytes=2073600 min=23 max=99 mean=79.220;U bytes=518400 min=125 max=131 mean=127.677;V bytes=518400 min=129 max=135 mean=131.985

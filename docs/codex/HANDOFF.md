@@ -65,6 +65,8 @@
   `validate_real_scenes.sh`。后者可交互采集三种真实场景并自动生成 summary.tsv。
   四种 sensor pattern 完成亮/中/暗代理测试；Type1下3A开/关MPP
   均为300帧、30.04fps、0 timeout/drop/overrun，3A额外约0.9% CPU/16MB RSS。
+- 用户已完成真实 bright/normal/dark：Y mean 为123.808/121.255/79.220，controls
+  随照度合理递增；三帧目视无全局偏绿。仅剩正常场景同屏延迟补录。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前本地 `main` 已合并 Stage 6；开发分支为 `codex/stage6-rkaiq-3a`。阶段 2

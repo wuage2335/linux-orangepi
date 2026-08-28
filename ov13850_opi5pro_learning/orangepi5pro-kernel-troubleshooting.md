@@ -1032,8 +1032,9 @@ V15=~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v15
   --configure ~/ov13850_opi5pro_learning/stage5/task7-live-rtp/configure_rkisp_1080p.sh
 ```
 
-四种 test pattern 和 3A 开关 MPP 对比均已通过；真实场景仍需现场移动摄像头或
-改变照明后验收。
+四种 test pattern 和 3A 开关 MPP 对比均已通过。2026-08-28 用户进一步完成
+真实 bright/normal/dark 三场景，AE/AWB controls 与亮度随照度
+变化合理，PNG 目视不再全局偏绿；仅剩同屏端到端延迟补录。
 
 ## 27. 新问题记录模板
 
