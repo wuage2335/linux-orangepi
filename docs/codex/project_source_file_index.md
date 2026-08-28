@@ -52,6 +52,8 @@
   私有副本，转换旧解析器所需模块键和枚举，不修改 `/etc/iqfiles`。
 - `ov13850_opi5pro_learning/rkaiq/scripts/run_rkaiq_local.sh`：设置私有库、shim、IQ
   路径与单摄 online 模式后启动 3A server。
+- `ov13850_opi5pro_learning/rkaiq/scripts/validate_real_scenes.sh`：交互式完成
+  bright/normal/dark 收敛、抓帧、YUV统计、controls、SHA和同屏延迟归档。
 - `ov13850_opi5pro_learning/rkaiq/patches/0001-ov13850-learning-compat.patch`：记录
   RKAIQ 实体名、固定焦点、online 和 ISP3 ABI 的最小兼容改动。
 

@@ -110,12 +110,19 @@ v13 暗场 AE 后:  Y mean 19.497, U mean 128.808, V mean 127.343
 实景查看画面并记录 controls/图像统计；验收前不要安装 systemd 服务，也不要把
 私有 bundle 覆盖到系统库。
 
-板端已部署带一键入口的 `runtime-v14`，bundle SHA256 为
-`0a5114278ed94ddbbb6e0008edb23331e49be1a83b4cbdd114772882492e47b2`：
+板端已部署带完整现场验收入口的 `runtime-v15`，bundle SHA256 为
+`0ef8f0a32da4516563160656e114ed5cc7f6ed06ee6d5a28fee259dd3a0e6b55`：
 
 ```bash
-~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v14/bin/run_rkaiq_local.sh
+V15=~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v15
+
+"$V15/bin/validate_real_scenes.sh" \
+  --bundle "$V15" \
+  --configure ~/ov13850_opi5pro_learning/stage5/task7-live-rtp/configure_rkisp_1080p.sh
 ```
+
+脚本依次提示 bright/normal/dark，自动等待收敛、抓取 NV12、统计 Y/U/V、记录
+controls、SHA256 和人工输入的同屏延迟；退出时停止 RKAIQ 并恢复稳定 controls。
 
 永久内核候选已在独立输出目录构建，但未部署：
 

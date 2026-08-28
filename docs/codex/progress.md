@@ -20,7 +20,9 @@
   128.132/194.793/128.815，AE维持exposure8和30.05fps；Type4为黑场，AE推到
   exposure2995/gain248/VBLANK1449。
 - 固定Type1下3A开/关MPP均为300帧、9.99秒、30.04fps、0丢帧；3A进程约
-  0.9% CPU/16100KB RSS。v14 bundle一键启动器已在普通用户下验证。
+  0.9% CPU/16100KB RSS。v15 bundle一键启动器已在普通用户下验证。
+- v15 bundle 新增交互式真实场景验收器，行为测试覆盖三场景、延迟录入、抓帧、
+  controls/stats/SHA 汇总和退出清理；板端压缩包与内部 SHA256 校验通过。
 
 ## 2026-08-28 阶段 5 Task 9/10 收口
 

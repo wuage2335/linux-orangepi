@@ -61,8 +61,9 @@
 - 含正式 module-info ioctl 的候选 Image 已独立构建，SHA256 为
   `cf75d6d2a0f40f455c123d8a1067aab607b14ed26be81ce44344bd68e9f63e61`；未部署、
   未重启。活动 `/boot/Image` 仍是前述稳定基线。
-- v14 bundle 已部署到板端，直接运行 `runtime-v14/bin/run_rkaiq_local.sh` 即可
-  非 root 启动。四种 sensor pattern 完成亮/中/暗代理测试；Type1下3A开/关MPP
+- v15 bundle 已部署到板端，包含 `run_rkaiq_local.sh` 和
+  `validate_real_scenes.sh`。后者可交互采集三种真实场景并自动生成 summary.tsv。
+  四种 sensor pattern 完成亮/中/暗代理测试；Type1下3A开/关MPP
   均为300帧、30.04fps、0 timeout/drop/overrun，3A额外约0.9% CPU/16MB RSS。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。

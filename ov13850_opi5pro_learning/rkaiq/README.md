@@ -27,3 +27,7 @@ AE and per-frame AWB processing pass as an unprivileged user. The compatibility
 patch falls back from `SCHED_RR` to `SCHED_OTHER` when `CAP_SYS_NICE` is absent.
 Bright/normal/dark subjective image-quality acceptance remains manual. See
 `docs/codex/stage6_rkaiq_3a_validation.md`.
+
+The deployable bundle also contains `bin/validate_real_scenes.sh`, which
+captures the three physical scenes and writes a machine-readable summary while
+restoring the sensor controls on exit.
