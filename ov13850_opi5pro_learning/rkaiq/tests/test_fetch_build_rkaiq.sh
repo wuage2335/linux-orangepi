@@ -56,7 +56,8 @@ for token in 'struct sensor_exposure_cfg exposure' 'u32 params_id'; do
 		fail "ISP3 ABI patch missing token: $token"
 done
 
-for token in 'librkaiq.so' 'prepare_compatible_iq.sh' 'NOTICE' 'ORIGIN.md' 'SHA256SUMS'; do
+for token in 'librkaiq.so' 'prepare_compatible_iq.sh' 'run_rkaiq_local.sh' \
+	'NOTICE' 'ORIGIN.md' 'SHA256SUMS'; do
 	grep -F "$token" "$PACKAGE" >/dev/null ||
 		fail "package script missing token: $token"
 done

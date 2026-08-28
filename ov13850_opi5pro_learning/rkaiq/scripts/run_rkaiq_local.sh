@@ -2,8 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-RKAIQ_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-BUNDLE=${RKAIQ_BUNDLE:-$RKAIQ_ROOT/build/bundle}
+if [[ -x $SCRIPT_DIR/rkaiq_3A_server && -d $SCRIPT_DIR/../lib ]]; then
+	BUNDLE=${RKAIQ_BUNDLE:-$(cd "$SCRIPT_DIR/.." && pwd)}
+else
+	RKAIQ_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+	BUNDLE=${RKAIQ_BUNDLE:-$RKAIQ_ROOT/build/bundle}
+fi
 DEVICE=${RKAIQ_SENSOR_DEVICE:-/dev/v4l-subdev2}
 
 for file in \
