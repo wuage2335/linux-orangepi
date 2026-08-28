@@ -383,6 +383,10 @@ fixed-30fps drift    = about +95 ms/min
 | v13 暗场图像 | Y mean 19.497，U 128.808，V 127.343 |
 | AWB | 约90帧连续执行；暗场 gain `(1.7498,1,1,1.6254)` |
 | stats | seq0-3内核完成；v13非root持续DQBUF/QBUF，AE/AWB闭环 |
+| pattern 1/2/3/4 Y mean | 128.132 / 194.793 / 128.815 / 0.000 |
+| pattern亮/暗 controls | exposure8,gain16,VBLANK96 / exposure2995,gain248,VBLANK1449 |
+| 3A开/关 MPP | 均300帧、9.99s、30.04fps、0 timeout/drop/overrun |
+| 3A额外资源 | 约0.9% CPU、16100KB RSS；sender CPU 3% vs 2% |
 | 停止后 PM | suspended，runtime_usage 0 |
 
 亮度/色度由 `capture_image_stats.sh` 分别扫描 NV12 的 Y、U、V plane 得到；FPS 来自

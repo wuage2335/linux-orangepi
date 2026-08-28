@@ -15,7 +15,7 @@ repository.
 Run the private bundle without installing system files:
 
 ```bash
-RKAIQ_BUNDLE=/path/to/bundle ./scripts/run_rkaiq_local.sh
+/path/to/bundle/bin/run_rkaiq_local.sh
 ```
 
 The launcher generates a compatible IQ copy under the bundle runtime

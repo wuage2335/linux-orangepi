@@ -16,6 +16,11 @@
 - 独立 `O=` 完整构建候选 Image 成功；`ov13850_min_ioctl` 与 compat 符号存在，
   Image SHA256 为 `cf75d6d2a0f40f455c123d8a1067aab607b14ed26be81ce44344bd68e9f63e61`。
   候选未部署，板端未重启。
+- OV13850四种test pattern完成确定性亮/中/暗代理测试：Type1/2/3的Y均值为
+  128.132/194.793/128.815，AE维持exposure8和30.05fps；Type4为黑场，AE推到
+  exposure2995/gain248/VBLANK1449。
+- 固定Type1下3A开/关MPP均为300帧、9.99秒、30.04fps、0丢帧；3A进程约
+  0.9% CPU/16100KB RSS。v14 bundle一键启动器已在普通用户下验证。
 
 ## 2026-08-28 阶段 5 Task 9/10 收口
 

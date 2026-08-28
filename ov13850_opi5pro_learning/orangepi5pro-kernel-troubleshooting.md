@@ -1024,6 +1024,15 @@ VLC默认约400ms，只作为兼容性客户端；低延迟验收使用GStreamer
 恢复曝光1536、增益16、VBLANK96，PM为suspended/0，debug恢复0。完整日志见
 `docs/codex/stage6_rkaiq_3a_validation.md`。
 
+板端 v14 bundle 已包含自启动脚本，可直接以前台普通用户运行：
+
+```bash
+~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v14/bin/run_rkaiq_local.sh
+```
+
+四种 test pattern 和 3A 开关 MPP 对比均已通过；真实场景仍需现场移动摄像头或
+改变照明后验收。
+
 ## 27. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：

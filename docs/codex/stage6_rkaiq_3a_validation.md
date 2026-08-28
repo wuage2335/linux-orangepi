@@ -60,6 +60,10 @@ online capture: 90 帧，30.05 fps，输出 279936000 bytes
 MPP/RTP 回归: 300 帧，30.04 fps，0 timeout/drop/overrun，10 IDR
 v13 非 root AE: 1 秒内 exposure 150->2995、gain 16->248、VBLANK 96->1449
 v13 AWB: 连续约 90 帧执行，暗场 gain=(1.7498,1.0,1.0,1.6254)
+test pattern 1: Y mean 128.132，exposure8/gain16/VBLANK96，30.05 fps
+test pattern 2: Y mean 194.793，exposure8/gain16/VBLANK96
+test pattern 3: Y mean 128.815，exposure8/gain16/VBLANK96
+test pattern 4: Y mean 0，exposure2995/gain248/VBLANK1449
 service stop: sensor PM suspended, runtime_usage=0
 ```
 
@@ -79,12 +83,34 @@ v13 暗场 AE 后:  Y mean 19.497, U mean 128.808, V mean 127.343
 暗场亮度已有量化提升，AWB 也逐帧执行；但在用户查看三种实景前，仍不把“暗绿
 画质已完全修复”作为最终验收结论。
 
+### 5.3 3A 开关性能对比
+
+固定 Type 1 pattern、同一 300 帧 DMA-BUF/MPP/RTP 参数：
+
+| 项目 | 3A 开 | 3A 关 |
+| --- | --- | --- |
+| 内部 elapsed/FPS | 9.99s / 30.04 | 9.99s / 30.04 |
+| timeout/drop/overrun | 0/0/0 | 0/0/0 |
+| sender CPU | 3% | 2% |
+| sender max RSS | 27732KB | 27728KB |
+| 3A 进程 | 约0.9% CPU，16100KB RSS | 无 |
+
+当前测量分辨率内没有帧周期或队列积压增量；额外资源约为一个 0.9% CPU、16MB RSS
+的 3A 进程。精确端到端毫秒差仍需用户把摄像头对准同屏计时器后复测。
+
 ## 6. 当前安全状态与下一步
 
 板端最终已停止 RKAIQ，恢复 `exposure=1536`、`analogue_gain=16`，PM 为
 `suspended/0`，`video_rkisp.debug` 已恢复 0。下一步由用户在明亮、普通、较暗三种
 实景查看画面并记录 controls/图像统计；验收前不要安装 systemd 服务，也不要把
 私有 bundle 覆盖到系统库。
+
+板端已部署带一键入口的 `runtime-v14`，bundle SHA256 为
+`0a5114278ed94ddbbb6e0008edb23331e49be1a83b4cbdd114772882492e47b2`：
+
+```bash
+~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v14/bin/run_rkaiq_local.sh
+```
 
 永久内核候选已在独立输出目录构建，但未部署：
 
