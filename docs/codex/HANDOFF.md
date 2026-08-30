@@ -1,20 +1,20 @@
 # RK3588 摄像头链路任务交接文档
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-28（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-08-30（Asia/Shanghai）。
 
 ## 0. 协作约束
 
 这是学习项目。用户是主要实践者；Codex 负责原理讲解、拆分步骤、审查结果和
 诊断。代码或板端修改前先说明目标、文件和风险；未经用户明确授权，不得一次性
 代写完整阶段。阶段 4 已完成官方 MPP、文件编码、实时 copy 和 DMA-BUF 验证；
-阶段 5 的 RTP/UDP、packet timing、RTSP和重连已通过，阶段6正在进行RKAIQ/3A
-接入。任何
+阶段5的RTP/UDP、packet timing、RTSP和重连已通过，阶段6的RKAIQ/3A、性能
+对比和稳定性也已收口。任何
 完成结论都必须有构建、码流解码或实机日志证据。
 
 ## 1. 当前状态
 
 - 项目：Orange Pi 5 Pro（RK3588S）上的 OV13850 CAM2 摄像头链路。
-- 项目阶段：阶段 0-5 已完成实机验收；下一主线为阶段 6“性能测量与稳定性”。
+- 项目阶段：阶段0-6已完成；阶段7“AI感知与业务扩展”为可选下一阶段。
   RTP/UDP已完成1800帧、30.05fps、0 timeout/drop/overrun；shared RTSP、
   GStreamer/VLC重连和关键帧恢复均通过。
 - 正式交付/参考驱动：`drivers/media/i2c/ov13850.c`。
@@ -50,9 +50,9 @@
   aarch64 bundle、module-info shim、IQ 兼容转换、固定焦点 AF 和单摄 online
   兼容。服务初始化及 `/dev/video11` 30.05 fps 通过，系统库和 `/etc/iqfiles`
   未被覆盖。
-- Stage 6 已定位普通用户 `SCHED_RR` stats poll 线程创建失败；v13 回退
+- Stage 6定位到普通用户`SCHED_RR` stats poll线程创建失败；v13回退
   `SCHED_OTHER` 后，AE 在 1 秒内把暗场 exposure 150->2995、gain 16->248，
-  AWB 连续逐帧执行。剩余工作是用户对明亮/普通/较暗三种实景做最终画质验收。
+  AWB连续逐帧执行；明亮、普通、较暗三种实景的最终画质已通过。
 - 板端收尾状态：RKAIQ 已停止，sensor PM `suspended/0`，controls 恢复
   `exposure=1536`、`analogue_gain=16`、`VBLANK=96`，内核 debug 恢复 0。详细过程见
   `docs/codex/stage6_rkaiq_3a_validation.md`。
@@ -66,7 +66,13 @@
   四种 sensor pattern 完成亮/中/暗代理测试；Type1下3A开/关MPP
   均为300帧、30.04fps、0 timeout/drop/overrun，3A额外约0.9% CPU/16MB RSS。
 - 用户已完成真实 bright/normal/dark：Y mean 为123.808/121.255/79.220，controls
-  随照度合理递增；三帧目视无全局偏绿。仅剩正常场景同屏延迟补录。
+  随照度合理递增；三帧目视无全局偏绿。
+- Stage 6于2026-08-30收口。端到端显示延迟沿用Stage 5同屏实测：修复PTS后
+  五组为60/70/10/160/60ms，平均72ms且无单调漂移；3A开/关都保持30.04fps、
+  0 drop/overrun，说明3A没有造成可见帧周期或队列回归。正常实景3A开启后的
+  精确同屏毫秒值、DDR带宽和温度没有同轮实测，保留为非阻塞可选补测。
+- 当前已识别的主要延迟/带宽因素是30ms接收jitter、采集与显示帧周期、可选RGA
+  约1.63-3.17ms，以及copy路径约1.82ms；推荐DMA-BUF并在无需变换时绕过RGA。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
 - 当前本地 `main` 已合并 Stage 6；开发分支为 `codex/stage6-rkaiq-3a`。阶段 2

@@ -132,3 +132,18 @@
 - 实测 2112x1568 为 29.97 fps、4224x3136 为 7.51 fps；停流后 PM 为
   suspended/usage 0，无新增 MIPI fault。`v4l2-compliance` 为 42/43，唯一遗留
   是与正式参考驱动一致的 control event 订阅缺失。
+
+## Stage 6最终结论（2026-08-30）
+
+- RKAIQ/3A不是当前吞吐瓶颈：3A开/关都保持30.04fps和0 drop/overrun，额外开销
+  约0.9% CPU、16MB RSS。
+- DMA-BUF相对copy移除约1.82ms/帧复制；RGA只在需要resize时引入约
+  1.63-3.17ms，不需要变换时bypass资源最低。
+- 修复RTSP实时PTS后，五组同屏延迟平均72ms、最大160ms，120秒内没有单调漂移；
+  长会话21,561帧、717.58秒、30.05fps、0 timeout/drop。
+- bright/normal/dark实景证明AE会随照度递增曝光、增益和VTS，AWB消除了全局
+  绿色覆盖；dark在sensor上限时仍有轻微暖紫噪声，属于画质边界。
+- 正常实景3A精确同屏延迟、DDR带宽和温度没有同轮测量，不能推导或补写数值；
+  三项作为可选补测，不阻塞Stage 6关闭。
+- 当前主要端到端延迟组成是接收jitter、采集/显示帧周期和显示刷新；优化优先级
+  是低缓存接收、DMA-BUF和按需绕过RGA，而不是关闭3A。

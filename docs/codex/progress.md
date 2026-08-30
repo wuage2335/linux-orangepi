@@ -1,5 +1,20 @@
 # linux-orangepi 阅读进度
 
+## 2026-08-30 Stage 6 收口
+
+- 阶段0-6正式完成，阶段7 AI感知与业务扩展保持可选。
+- 收口证据包括RTSP 21,561帧/717.58秒/30.05fps/0 timeout/drop、五组同屏延迟
+  平均72ms且无单调漂移、copy/DMA-BUF和RGA三路径对比、3A开/关性能、三种
+  实景AE/AWB画质、PM与fault检查。
+- 3A开/关均保持300帧、30.04fps、0 drop/overrun；额外资源约0.9% CPU和
+  16MB RSS，未观察到帧周期或队列回归。
+- 正常实景3A精确同屏延迟没有采集，`summary.tsv`仍为`unknown`；DDR带宽和温度
+  也缺少同轮数据。三项明确作为非阻塞可选补测，不虚构结果。
+- 当前推荐路径为DMA-BUF，并在无需图像变换时绕过RGA；主要延迟组成是接收缓存、
+  帧周期和显示刷新，而不是RKAIQ 3A。
+- 收口编辑首次尝试因PowerShell吞掉Bash变量、手写diff行数不合法而未应用；随后
+  改为在可写工作区使用`apply_patch`编辑并同步回WSL，仓库未经历半应用状态。
+
 ## 2026-08-28 Stage 6 RKAIQ/3A
 
 - 完成学习驱动 Rockchip module-info ioctl、compat ioctl 与源代码契约测试。
@@ -25,7 +40,8 @@
   controls/stats/SHA 汇总和退出清理；板端压缩包与内部 SHA256 校验通过。
 - 用户完成真实三场景：bright/normal/dark Y mean为123.808/121.255/79.220；AE
   controls从1498/21/96递增到2995/248/1449，U/V接近128。PNG目视无全局偏绿，
-  dark仅有最大增益下轻微暖紫噪声。剩余正常场景同屏延迟补录。
+  dark仅有最大增益下轻微暖紫噪声。正常实景3A精确同屏延迟未补录，后在Stage 6
+  收口时作为非阻塞可选补测记录。
 
 ## 2026-08-28 阶段 5 Task 9/10 收口
 

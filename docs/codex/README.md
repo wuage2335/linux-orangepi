@@ -32,7 +32,7 @@ OV13850/MIPI -> CSI/DPHY -> CIF/ISP -> V4L2
 -> RGA（按需）-> MPP -> RTP/RTSP -> PC 播放
 ```
 
-阶段 0-5 已完成，下一主线为阶段 6“性能测量与稳定性”。
+阶段0-6已完成；阶段7“AI感知与业务扩展”为可选下一阶段。
 
 阶段 2 学习驱动已完成 controls、runtime PM、双模式、TRY/ACTIVE、stream
 lifecycle、内建启动和实机验收。阶段 3 已完成 RKISP 1920x1080 NV12@30、
@@ -46,7 +46,10 @@ Task 8 packet timing与参数矩阵推荐jitter30ms、GOP30、queue2。Task 9 sh
 RTSP、实时时钟PTS、GStreamer/VLC重连和阶段5总回归也已完成。
 
 Stage 6 已完成私有 RKAIQ、module-info、IQ、固定焦点、单摄 online、动态 stats
-和非 root AE/AWB 算法验证；明亮/普通/较暗三种实景的最终画质仍待用户验收。
+和非root AE/AWB算法验证；明亮/普通/较暗三种实景画质、3A性能以及持续稳定性
+已经验收。正常实景3A精确同屏延迟、DDR带宽和温度没有同轮测量，明确作为可选
+补测，不虚构结果，也不阻塞Stage 6关闭。收口结论见
+[`stage6_rkaiq_3a_validation.md`](stage6_rkaiq_3a_validation.md)。
 
 ## 协作约束
 

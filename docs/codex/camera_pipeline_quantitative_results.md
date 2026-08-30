@@ -392,8 +392,21 @@ fixed-30fps drift    = about +95 ms/min
 | 真实normal | Y/U/V mean 121.255/127.872/128.408，exp1997/gain65/VBLANK451 |
 | 真实dark | Y/U/V mean 79.220/127.677/131.985，exp2995/gain248/VBLANK1449 |
 | 停止后 PM | suspended，runtime_usage 0 |
+| 3A延迟影响 | 3A开/关均30.04fps、0 drop/overrun；没有精确3A实景同屏毫秒样本 |
 
 亮度/色度由 `capture_image_stats.sh` 分别扫描 NV12 的 Y、U、V plane 得到；FPS 来自
-`v4l2-ctl --stream-poll`。动态 stats、三种真实场景 AE/AWB 与画质已通过；剩余
-项目是正常场景同屏端到端延迟补录。完整过程见
+`v4l2-ctl --stream-poll`。动态stats、三种真实场景AE/AWB与画质均已通过。
+
+### 10.1 Stage 6收口结论
+
+Stage 5实时PTS修复后的显示端到端基线为平均72ms、最大160ms，120秒内无单调
+增长；Stage 6的3A开/关对比没有带来FPS、drop或queue overrun回归，但正常实景
+`summary.tsv`的`latency_ms`仍为`unknown`，所以不生成不存在的3A精确毫秒值。
+
+主要开销和优化顺序为：接收jitter/显示刷新与帧周期，copy路径约1.82ms，可选
+RGA约1.63-3.17ms；推荐DMA-BUF，且无需变换时绕过RGA。3A额外约0.9% CPU和
+16MB RSS，不是当前吞吐瓶颈。DDR带宽与温度缺少同轮可复现数据，作为可选补测。
+
+凭借长会话21,561帧/717.58秒、网络抖动矩阵、断开重连、路径性能对比、3A实景
+画质、PM与fault检查，Stage 6于2026-08-30完成。完整过程见
 `stage6_rkaiq_3a_validation.md`。
