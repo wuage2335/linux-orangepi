@@ -17,6 +17,9 @@ namespace {
  * 文件编码前端用于先隔离验证 MPP 本身：输入是一帧 1920x1080 NV12，程序
  * 按指定次数重复提交并输出 H.264/H.265 Annex-B 裸流。它刻意不接 V4L2，
  * 因而编码失败时可以把问题限定在 MPP、参数或输入格式，而不是摄像头链路。
+ *
+ * 这里的输入是未压缩 NV12，固定一帧 3,110,400 字节；输出是压缩后的 Annex-B
+ * H.264/H.265 packet 流，大小随画面复杂度和码率控制变化，不能再按宽高计算。
  */
 
 using namespace camera_mpp;
@@ -39,6 +42,10 @@ struct CommandLine {
 
 CommandLine parse_command_line(int argc, char **argv)
 {
+	/*
+	 * 命令行只负责生成 EncoderConfig，不直接调用 MPP。把“用户输入是否合法”
+	 * 与“硬件编码是否成功”分开后，错误信息可以明确落在配置层或编码层。
+	 */
 	CommandLine command;
 	int index = 1;
 
@@ -107,6 +114,11 @@ std::vector<unsigned char> read_input(const char *path)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * 编码主线：读取一帧 -> 创建 MPP context/buffer -> 写 codec header -> 重复
+	 * 提交帧 -> 取回 packet 写文件 -> 最后一帧等待 EOS。MppEncoder 管硬件资源，
+	 * OstreamPacketSink 只负责把已经编码好的 packet 落盘。
+	 */
 	CommandLine command;
 	try {
 		command = parse_command_line(argc, argv);
@@ -131,6 +143,10 @@ int main(int argc, char **argv)
 		encoder.load_nv12(input.data(), input.size());
 		OstreamPacketSink output_sink(output);
 		EncoderStats stats;
+		/*
+		 * SPS/PPS（H.264）或 VPS/SPS/PPS（H.265）让解码器知道尺寸和编码参数，
+		 * 必须放在第一幅图像前；它们不是摄像头采集帧。
+		 */
 		encoder.write_header(output_sink, stats);
 
 		const auto start = std::chrono::steady_clock::now();
@@ -141,6 +157,10 @@ int main(int argc, char **argv)
 				encoder.request_idr();
 			const bool eos = encoder.encode_frame(
 				index, index == command.frames - 1, output_sink, stats);
+			/*
+			 * 一次输入帧可能对应一个或多个编码 packet，统计由 sink 统一累计。
+			 * EOS 表示编码器已接受“后面没有更多帧”，不是普通关键帧标志。
+			 */
 			++frames_out;
 			if (index == command.frames - 1 && !eos)
 				throw std::runtime_error("last packet did not carry EOS");
