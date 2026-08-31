@@ -45,6 +45,12 @@
  */
 namespace {
 
+/*
+ * 这个实时程序同时处理两种“所有权”：V4L2 buffer 在驱动和用户态之间通过
+ * QBUF/DQBUF 转移，RGA handle 则在程序初始化到析构期间一直有效。理解何时
+ * 可以 QBUF，是读懂 copy/direct 两条路径和避免花屏的关键。
+ */
+
 using SteadyClock = std::chrono::steady_clock;
 
 /*
@@ -601,6 +607,11 @@ void write_output(const char *path,
 
 int main(int argc, char **argv)
 {
+	/*
+	 * main 把资源生命周期排成固定顺序：创建 capture -> 创建 resizer -> STREAMON
+	 * -> 预丢弃 -> 处理 300 帧 -> STREAMOFF -> 保存结果。对象声明顺序保证退出
+	 * 时 RGA handle 先释放、V4L2 地址后 munmap，不会留下指向失效内存的 handle。
+	 */
 	InputMode mode;
 	const char *device;
 	const char *output_path;
