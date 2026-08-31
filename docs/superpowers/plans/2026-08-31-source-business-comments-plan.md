@@ -260,7 +260,7 @@ git add docs/codex/project_source_file_index.md
 git commit -m "docs(code): index beginner-commented sources"
 ```
 
-- [ ] **Step 6: Merge back without touching the user's existing change**
+- [x] **Step 6: Merge back without touching the user's existing change**
 
 Verify the main worktree still contains only the user's pre-existing troubleshooting edit, then fast-forward or cherry-pick the isolated branch commits. Do not stage or rewrite that file.
 
@@ -277,3 +277,5 @@ Verify the main worktree still contains only the user's pre-existing troubleshoo
 - RKAIQ host测试、NV12统计测试、构建脚本契约测试和aarch64工具构建通过。
 - 最终范围只有本设计/计划/索引和12个目标`.c/.cpp`，没有测试脚本、头文件、
   Makefile、DTS或第三方源码改动。
+- 分支通过merge commit `d50b1c8e4`合并回`main`；用户原有的
+  `orangepi5pro-kernel-troubleshooting.md`修改保持未暂存且未被改写。
