@@ -15,6 +15,14 @@
 #include "mpp_encoder_core.hpp"
 #include "v4l2_capture.hpp"
 
+/*
+ * 这是阶段 5 的实时 RTP 主程序，负责把前面各阶段拼成一条有限时长链路：
+ *
+ *   /dev/video11 NV12 -> V4L2 buffer -> MPP H.264 -> GStreamer RTP/UDP -> PC
+ *
+ * 它不提供 RTSP 会话管理；接收端必须事先知道 IP、端口和 H.264/RTP 参数。
+ * 该程序适合做固定帧数、丢帧、码率和端到端延迟实验。
+ */
 namespace {
 
 using namespace camera_mpp;
@@ -39,6 +47,7 @@ struct CommandLine {
 
 void handle_signal(int)
 {
+	/* signal handler 只设置原子标志，资源清理由正常 C++ 控制流完成。 */
 	stop_requested.store(true, std::memory_order_relaxed);
 }
 
@@ -116,6 +125,10 @@ void print_usage(const char *program)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * main 同时拥有 capture、encoder 和 RTP sink，因此能规定正确销毁顺序：
+	 * 停采集、发送 EOS、检查 bus，随后 RAII 析构各硬件/网络资源。
+	 */
 	CommandLine command;
 	try {
 		command = parse_command_line(argc, argv);
@@ -147,6 +160,7 @@ int main(int argc, char **argv)
 		GstRtpSink rtp_sink(rtp_config);
 		camera_streaming::CongestionIdrController congestion(30);
 		EncoderStats stats;
+		/* 接收端在第一幅图像前需要 SPS/PPS，先把编码配置交给 RTP pipeline。 */
 		encoder.write_header(rtp_sink, stats);
 		capture.start();
 
@@ -167,6 +181,7 @@ int main(int argc, char **argv)
 		     !stop_requested.load(std::memory_order_relaxed);
 		     ++index) {
 			const CapturedFrame frame = capture.dequeue(timeouts);
+			/* V4L2 sequence 检测采集链路丢帧；RTP packet 数通常大于图像帧数。 */
 			if (have_previous) {
 				const std::uint32_t delta = frame.sequence - previous_sequence;
 				if (delta == 0)
@@ -193,6 +208,10 @@ int main(int argc, char **argv)
 			}
 			rtp_sink.throw_on_bus_error();
 			if (congestion.observe(rtp_sink.queue_overruns(), index)) {
+				/*
+				 * 丢包后 P/B 帧可能依赖已经丢失的参考图像。请求 IDR 让接收端
+				 * 从一幅完整关键帧重新恢复，冷却控制避免每帧都请求 IDR。
+				 */
 				encoder.request_idr();
 				std::cerr << "RTP_QUEUE_CONGESTION frame=" << index
 					  << " overruns=" << rtp_sink.queue_overruns()

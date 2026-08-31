@@ -7,6 +7,15 @@
 
 #include "gst_rtp_sink.hpp"
 
+/*
+ * 本文件实现“共享 RTSP 出口”。摄像头和 MPP 编码器由外部 worker 持续运行，
+ * RTSP 客户端可以随时连接或断开，而不会为每个客户端重新打开摄像头：
+ *
+ *   MPP packet -> shared appsrc -> h264parse -> rtph264pay -> RTSP client
+ *
+ * 没有客户端时 packet 直接丢弃，防止形成历史画面积压；新客户端连接后先补
+ * codec header，再请求一幅 IDR，使播放器能从当前时刻开始解码。
+ */
 namespace camera_streaming {
 
 namespace {
@@ -51,6 +60,11 @@ GstRtspServerSink::~GstRtspServerSink()
 
 void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 {
+	/*
+	 * consume 在编码线程调用，RTSP 回调在 GLib 主循环线程调用，所以共享的
+	 * appsrc、客户端数、header 和时钟都受 state_mutex_ 保护。锁内只复制引用
+	 * 和小段状态，真正 push 在锁外完成，避免网络阻塞卡住连接/断开回调。
+	 */
 	if (packet.size && !packet.data)
 		throw std::invalid_argument("nonempty RTSP packet has no data");
 	if (!packet.size)
@@ -68,9 +82,8 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 		}
 
 		/*
-		 * Encoding intentionally continues without viewers. Dropping here
-		 * keeps sensor timing and encoder state warm without building an
-		 * unbounded queue that would become latency after the next connect.
+		 * 无观众时仍保持 sensor/encoder 热运行，但立即丢弃输出。这样重连快，
+		 * 又不会把无人观看期间的旧画面堆成数秒延迟。
 		 */
 		if (!appsrc_ || active_clients_ == 0) {
 			dropped_packets_.fetch_add(1, std::memory_order_relaxed);
@@ -85,6 +98,10 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 		adjusted_pts = live_pts_clock_.map(
 			static_cast<std::int64_t>(gst_util_get_timestamp() / GST_USECOND));
 	}
+	/*
+	 * LivePtsClock 使用真实单调时间重新建立会话 PTS。它修复了实采30.05fps与
+	 * 名义30fps固定步长之间的长期漂移，系统时间校准也不会让 PTS 倒退。
+	 */
 
 	if (!header.empty()) {
 		const camera_mpp::EncodedPacketView header_packet = {
@@ -124,6 +141,7 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 
 void GstRtspServerSink::run()
 {
+	/* GLib main loop 负责 RTSP socket、客户端和 media 回调，不执行摄像头采集。 */
 	throw_on_error();
 	std::cout << "RTSP_SERVER_READY service=" << config_.service
 		  << " mount=" << config_.mount << std::endl;
@@ -236,6 +254,11 @@ void GstRtspServerSink::on_bus_error(GstBus *,
 
 void GstRtspServerSink::configure_media(GstRTSPMedia *media)
 {
+	/*
+	 * 客户端 DESCRIBE/PLAY 后，GStreamer 为 shared factory 准备 media pipeline。
+	 * 这里找到名为 source 的 appsrc、设置 H.264 caps，并保存带引用的对象给编码
+	 * 线程使用。media 未准备好之前即使有客户端也不能安全 push。
+	 */
 	GstElement *pipeline = gst_rtsp_media_get_element(media);
 	if (!pipeline) {
 		record_error("gst_rtsp_media_get_element returned null");
@@ -304,6 +327,7 @@ void GstRtspServerSink::configure_media(GstRTSPMedia *media)
 
 void GstRtspServerSink::clear_media(GstRTSPMedia *media) noexcept
 {
+	/* media 停止时先从共享状态摘除指针，再断开 signal 并释放引用。 */
 	GstElement *source = nullptr;
 	GstBus *bus = nullptr;
 	GstRTSPMedia *owned_media = nullptr;
@@ -336,6 +360,10 @@ void GstRtspServerSink::clear_media(GstRTSPMedia *media) noexcept
 
 void GstRtspServerSink::add_client(GstRTSPClient *client)
 {
+	/*
+	 * 每个新客户端都需要重新发送 header 并请求 IDR；否则它可能从 GOP 中间
+	 * 加入，只收到依赖旧参考帧的 P 帧，表现为黑屏或花屏直到下一关键帧。
+	 */
 	g_object_ref(client);
 	{
 		std::lock_guard<std::mutex> lock(clients_mutex_);
@@ -357,6 +385,7 @@ void GstRtspServerSink::add_client(GstRTSPClient *client)
 
 void GstRtspServerSink::remove_client(GstRTSPClient *client) noexcept
 {
+	/* 连接关闭只减少观看者计数，不停止唯一的采集/编码 worker。 */
 	bool found = false;
 	{
 		std::lock_guard<std::mutex> lock(clients_mutex_);
@@ -383,6 +412,7 @@ void GstRtspServerSink::remove_client(GstRTSPClient *client) noexcept
 
 void GstRtspServerSink::record_error(const std::string &message) noexcept
 {
+	/* 只保留第一个根因，并唤醒主线程退出；后续清理由 cleanup 统一完成。 */
 	{
 		std::lock_guard<std::mutex> lock(state_mutex_);
 		if (fatal_error_.empty())
@@ -393,6 +423,10 @@ void GstRtspServerSink::record_error(const std::string &message) noexcept
 
 void GstRtspServerSink::initialize(const RtspServerConfig &config)
 {
+	/*
+	 * factory 的 launch 字符串描述每个 RTSP media 的内部管线。shared=true 是
+	 * 本项目的关键：所有客户端共享同一 media，而不是各自触发一套摄像头编码。
+	 */
 	validate_config(config);
 	config_ = config;
 	gst_init(nullptr, nullptr);
@@ -432,6 +466,10 @@ void GstRtspServerSink::initialize(const RtspServerConfig &config)
 
 void GstRtspServerSink::cleanup() noexcept
 {
+	/*
+	 * 清理顺序先阻止新回调，再关闭客户端，随后释放 media/appsrc/bus，最后释放
+	 * server 和 main loop。函数必须 noexcept，才能安全服务于正常析构和异常回滚。
+	 */
 	request_stop();
 	{
 		std::lock_guard<std::mutex> lock(state_mutex_);

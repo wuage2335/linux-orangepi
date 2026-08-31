@@ -15,6 +15,11 @@
 #include "mpp_encoder_core.hpp"
 #include "v4l2_capture.hpp"
 
+/*
+ * 这是共享 RTSP 服务的组合入口。程序内部只有一套 V4L2 capture 和一套 MPP
+ * encoder：后台 worker 持续采集编码，主线程运行 GLib/RTSP 事件循环。
+ * 客户端只是订阅当前码流，不拥有也不重启摄像头。
+ */
 namespace {
 
 using namespace camera_mpp;
@@ -37,6 +42,7 @@ struct CommandLine {
 };
 
 struct WorkerResult {
+	/* worker 结束后把统计和异常统一交还 main，避免跨线程直接抛异常。 */
 	EncoderStats encoder;
 	std::uint64_t frames = 0;
 	std::uint64_t dropped = 0;
@@ -122,6 +128,10 @@ void run_capture_worker(const CommandLine &command,
 			std::atomic<bool> &worker_stop,
 			WorkerResult &result)
 {
+	/*
+	 * worker 是唯一允许调用 V4L2 和 MPP 的线程。这样 encoder control、输入帧和
+	 * DMA-BUF 所有权天然串行；RTSP 回调只发布“需要 IDR”等轻量请求。
+	 */
 	try {
 		EncoderConfig encoder_config;
 		encoder_config.bitrate = command.bitrate;
@@ -147,10 +157,7 @@ void run_capture_worker(const CommandLine &command,
 
 		while (!worker_stop.load(std::memory_order_relaxed) &&
 		       !signal_stop_requested.load(std::memory_order_relaxed)) {
-			/*
-			 * Only the encoder thread calls MPP control. RTSP callbacks publish
-			 * a request, and this point serializes it before the next frame.
-			 */
+			/* RTSP 回调发布请求，编码线程在下一帧前串行调用 MPP control。 */
 			if (sink.take_client_idr_request()) {
 				encoder.request_idr();
 				++result.idr_requests;
@@ -191,6 +198,7 @@ void run_capture_worker(const CommandLine &command,
 		result.elapsed_seconds =
 			std::chrono::duration<double>(Clock::now() - start).count();
 	} catch (const std::exception &error) {
+		/* 保存原异常，同时让 RTSP 主循环退出；main join 后重新抛出根因。 */
 		result.error = std::current_exception();
 		sink.report_worker_error(std::string("capture worker: ") + error.what());
 	} catch (...) {
@@ -204,6 +212,11 @@ void run_capture_worker(const CommandLine &command,
 
 int main(int argc, char **argv)
 {
+	/*
+	 * main 的关闭协议是：通知 worker -> 退出 GLib loop -> join worker -> 检查两边
+	 * 的错误 -> 输出统计。无论 Ctrl+C、采集失败还是 GStreamer bus error，都走
+	 * 同一清理路径，避免后台线程继续访问已经析构的 sink。
+	 */
 	CommandLine command;
 	try {
 		command = parse_command_line(argc, argv);
