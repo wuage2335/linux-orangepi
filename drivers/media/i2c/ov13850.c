@@ -11,6 +11,25 @@
  * V0.0X01.0X05 add function g_mbus_config
  */
 
+/*
+ * 这份文件是 OV13850 的正式 V4L2 sensor 驱动。可以把它理解成摄像头模组与
+ * Linux 视频框架之间的“硬件翻译层”：上层只提出分辨率、曝光和开始采集等
+ * 标准请求，本驱动负责把请求转换为时钟、电源、GPIO 和 I2C 寄存器操作。
+ *
+ * 它在完整图像链路中的位置是：
+ *
+ *   用户程序 -> RKISP/CIF -> V4L2 sensor subdev（本文件）
+ *                                      |
+ *                                      v
+ *                  OV13850 -> MIPI CSI-2 RAW10 数据
+ *
+ * 本文件不保存或处理任何一帧图像。它只让 sensor 按正确时序输出 RAW10，图像
+ * 后续由 D-PHY、CIF 和 ISP 接收。初学者阅读时建议抓住这条主线：
+ *
+ *   probe 发现硬件 -> runtime PM 上电 -> set_fmt/controls 记录配置
+ *   -> s_stream 写模式并出图 -> s_stream 停流 -> runtime PM 下电
+ */
+
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/delay.h>
@@ -101,6 +120,11 @@ struct regval {
 	u8 val;
 };
 
+/*
+ * mode 把“用户看到的视频模式”与“sensor 真正需要的时序参数”绑在一起。
+ * HTS/VTS 分别表示一行和一帧的总时钟长度，不等于可见宽高；它们与 pixel rate
+ * 一起决定帧率，也决定 VBLANK 和曝光允许的最大范围。
+ */
 struct ov13850_mode {
 	u32 width;
 	u32 height;
@@ -111,6 +135,13 @@ struct ov13850_mode {
 	const struct regval *reg_list;
 };
 
+/*
+ * 每个实际 OV13850 对应一个 ov13850 实例。
+ *
+ * 前半部分保存板级硬件资源；subdev/pad/controls 是它暴露给 V4L2 的接口；
+ * streaming、power_on 和 cur_mode 是当前运行状态。mutex 保证格式、control、
+ * 电源和启停操作不会同时修改同一组寄存器。
+ */
 struct ov13850 {
 	struct i2c_client	*client;
 	struct clk		*xvclk;
@@ -145,7 +176,9 @@ struct ov13850 {
 #define to_ov13850(sd) container_of(sd, struct ov13850, subdev)
 
 /*
- * Xclk 24Mhz
+ * 芯片全局寄存器表建立与具体分辨率无关的模拟、PLL 和 MIPI 基线。
+ * OV13850 的不同 revision 需要不同表；必须先写全局表，再写当前 mode 表。
+ * Xclk 24MHz 是这些表成立的前提，不能只改时钟而继续沿用原表。
  */
 static const struct regval ov13850_global_regs_r1a[] = {
 	{0x0103, 0x01},
@@ -669,6 +702,11 @@ static const struct ov13850_mode supported_modes[] = {
 	},
 };
 
+/*
+ * 正式驱动只公布芯片寄存器表已经验证过的离散模式。请求其他尺寸时，set_fmt()
+ * 会选择最接近的一项；sensor 本身不会在这里做任意缩放，缩放属于后级 ISP/RGA。
+ */
+
 static const s64 link_freq_menu_items[] = {
 	OV13850_LINK_FREQ_300MHZ
 };
@@ -681,7 +719,10 @@ static const char * const ov13850_test_pattern_menu[] = {
 	"Vertical Color Bar Type 4"
 };
 
-/* Write registers up to 4 at a time */
+/*
+ * I2C 是 CPU 配置 sensor 的控制通道，不承载图像数据。OV13850 使用 16 位寄存器
+ * 地址和大端字节顺序；这里把 1-4 字节的数值拼成一次 I2C 写事务。
+ */
 static int ov13850_write_reg(struct i2c_client *client, u16 reg,
 			     u32 len, u32 val)
 {
@@ -715,6 +756,10 @@ static int ov13850_write_reg(struct i2c_client *client, u16 reg,
 static int ov13850_write_array(struct i2c_client *client,
 			       const struct regval *regs)
 {
+	/*
+	 * 寄存器表必须按顺序执行，因为后面的时钟、模拟和 MIPI 配置可能依赖前面的
+	 * 复位或 PLL 设置。遇到第一处 I2C 错误立即停止，避免留下半配置状态。
+	 */
 	u32 i;
 	int ret = 0;
 
@@ -726,7 +771,7 @@ static int ov13850_write_array(struct i2c_client *client,
 	return ret;
 }
 
-/* Read registers up to 4 at a time */
+/* 读事务先发送 16 位地址，再在同一次 transfer 中读取数据。 */
 static int ov13850_read_reg(struct i2c_client *client, u16 reg,
 			    unsigned int len, u32 *val)
 {
@@ -792,6 +837,11 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 			   struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
+	/*
+	 * TRY 只是某个打开句柄的协商草稿；ACTIVE 才改变设备将要使用的模式。
+	 * 这里只更新软件状态和 control 范围，真正的寄存器写入留到 stream-on，
+	 * 因而在 sensor 断电时也可以安全枚举和协商格式。
+	 */
 	struct ov13850 *ov13850 = to_ov13850(sd);
 	const struct ov13850_mode *mode;
 	s64 h_blank, vblank_def;
@@ -917,6 +967,10 @@ static void ov13850_get_module_inf(struct ov13850 *ov13850,
 	strlcpy(inf->base.lens, ov13850->len_name, sizeof(inf->base.lens));
 }
 
+/*
+ * Rockchip ISP/RKAIQ 除标准 V4L2 接口外，还会查询模组、镜头和朝向信息。
+ * 这些字符串来自设备树，用于选择正确 IQ 参数；它们不是 sensor 芯片 ID。
+ */
 static long ov13850_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -1001,6 +1055,10 @@ static long ov13850_compat_ioctl32(struct v4l2_subdev *sd,
 
 static int __ov13850_start_stream(struct ov13850 *ov13850)
 {
+	/*
+	 * 一次可靠的出图事务按“模式表 -> 重放 controls -> 0x0100=1”执行。
+	 * controls 可能在断电时由用户预先设置，所以不能只依赖模式表中的默认值。
+	 */
 	int ret;
 
 	ret = ov13850_write_array(ov13850->client, ov13850->cur_mode->reg_list);
@@ -1030,6 +1088,10 @@ static int __ov13850_stop_stream(struct ov13850 *ov13850)
 
 static int ov13850_s_stream(struct v4l2_subdev *sd, int on)
 {
+	/*
+	 * streaming 期间持有 runtime-PM 引用，保证 sensor 不会在传输帧时被自动
+	 * 断电。停流先写 software standby，再释放引用，使空闲设备可以省电。
+	 */
 	struct ov13850 *ov13850 = to_ov13850(sd);
 	struct i2c_client *client = ov13850->client;
 	int ret = 0;
@@ -1067,6 +1129,10 @@ unlock_and_return:
 
 static int ov13850_s_power(struct v4l2_subdev *sd, int on)
 {
+	/*
+	 * s_power 用于显式初始化场景：上电后写全局表，但不等于开始出图。
+	 * 真正的数据输出仍由 s_stream 控制，避免“仅打开设备就偷偷出流”。
+	 */
 	struct ov13850 *ov13850 = to_ov13850(sd);
 	struct i2c_client *client = ov13850->client;
 	int ret = 0;
@@ -1111,6 +1177,11 @@ static inline u32 ov13850_cal_delay(u32 cycles)
 
 static int __ov13850_power_on(struct ov13850 *ov13850)
 {
+	/*
+	 * 上电顺序来自硬件数据手册：选择工作引脚、提供 24MHz 时钟、开启三路电源、
+	 * 释放 reset/PWDN，最后等待足够时钟周期再访问 I2C。顺序错误通常表现为
+	 * chip ID 读成 0 或 I2C NACK，而不是普通的软件返回值问题。
+	 */
 	int ret;
 	u32 delay_us;
 	struct device *dev = &ov13850->client->dev;
@@ -1166,6 +1237,7 @@ disable_clk:
 
 static void __ov13850_power_off(struct ov13850 *ov13850)
 {
+	/* 按近似相反顺序关闭输出、时钟和电源，防止管脚反向灌电。 */
 	int ret;
 	struct device *dev = &ov13850->client->dev;
 
@@ -1189,6 +1261,7 @@ static void __ov13850_power_off(struct ov13850 *ov13850)
 
 static int __maybe_unused ov13850_runtime_resume(struct device *dev)
 {
+	/* runtime PM 把“设备被使用”转换为实际硬件上电。 */
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -1198,6 +1271,7 @@ static int __maybe_unused ov13850_runtime_resume(struct device *dev)
 
 static int __maybe_unused ov13850_runtime_suspend(struct device *dev)
 {
+	/* usage count 归零后进入这里；停流路径必须先释放自己的 PM 引用。 */
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -1293,6 +1367,11 @@ static const struct v4l2_subdev_ops ov13850_subdev_ops = {
 
 static int ov13850_set_ctrl(struct v4l2_ctrl *ctrl)
 {
+	/*
+	 * controls 是用户态调曝光、增益和测试图的标准入口。设备休眠时只保存新值，
+	 * 不为单次设置强行上电；设备正在使用时才立即写寄存器。VBLANK 会改变一帧
+	 * 总行数，因此必须同步更新曝光上限，避免曝光跨过下一帧边界。
+	 */
 	struct ov13850 *ov13850 = container_of(ctrl->handler,
 					     struct ov13850, ctrl_handler);
 	struct i2c_client *client = ov13850->client;
@@ -1359,6 +1438,10 @@ static const struct v4l2_ctrl_ops ov13850_ctrl_ops = {
 
 static int ov13850_initialize_controls(struct ov13850 *ov13850)
 {
+	/*
+	 * 把 sensor 数据手册里的时序能力注册为 V4L2 controls。只读项描述链路，
+	 * 可写项由 set_ctrl() 落到寄存器；所有 control 共用设备 mutex。
+	 */
 	const struct ov13850_mode *mode;
 	struct v4l2_ctrl_handler *handler;
 	struct v4l2_ctrl *ctrl;
@@ -1429,6 +1512,11 @@ err_free_handler:
 static int ov13850_check_sensor_id(struct ov13850 *ov13850,
 				   struct i2c_client *client)
 {
+	/*
+	 * chip ID 回答“总线上是不是 OV13850”，revision 决定该写哪套全局寄存器。
+	 * 当前项目曾遇到冷启动首次读取失败，因此 probe 会把该错误转为延迟探测，
+	 * 等供电链路稳定后由驱动核心重试。
+	 */
 	struct device *dev = &ov13850->client->dev;
 	u32 id = 0;
 	int ret;
@@ -1471,6 +1559,12 @@ static int ov13850_configure_regulators(struct ov13850 *ov13850)
 static int ov13850_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
 {
+	/*
+	 * probe 只在设备树 compatible 与 I2C driver 匹配后执行。它完成从“一个 I2C
+	 * 地址”到“可被 CIF/ISP 异步发现的 sensor subdev”的全部搭建：读取模组信息、
+	 * 获取硬件资源、临时上电验明身份、建立 controls/media pad、注册 subdev，
+	 * 最后交给 runtime PM 管理。任何失败都必须按创建顺序反向清理。
+	 */
 	struct device *dev = &client->dev;
 	struct device_node *node = dev->of_node;
 	struct ov13850 *ov13850;

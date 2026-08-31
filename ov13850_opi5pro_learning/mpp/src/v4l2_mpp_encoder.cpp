@@ -20,6 +20,8 @@ namespace {
  *   dmabuf : V4L2 MMAP/EXPBUF -> MPP 导入同一 DMA-BUF。
  * 两条路径使用同一编码核心和 300 帧验收窗口，以便比较搬运成本而不是比较
  * 两套编码器。当前工具固定接收已配置好的 1920x1080 NV12 /dev/video11。
+ * 输出仍是文件而不是网络流，这样阶段 4 可以先验证实时采集与硬件编码，再把
+ * packet sink 替换为阶段 5 的 RTP/RTSP sink。
  */
 
 using namespace camera_mpp;
@@ -41,6 +43,11 @@ double elapsed_us(const Clock::time_point &start, const Clock::time_point &end)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * 每一帧都经历 DQBUF -> MPP -> QBUF。copy 模式在复制完成后就能 QBUF；
+	 * DMA-BUF 模式中 MPP 仍读取同一块采集内存，所以必须等同步取回编码 packet
+	 * 后再 QBUF。过早归还会让 ISP 覆盖编码器尚未读完的画面，形成随机花屏。
+	 */
 	bool use_dmabuf = false;
 	const char *device = nullptr;
 	const char *output_path = nullptr;
@@ -78,6 +85,7 @@ int main(int argc, char **argv)
 		encoder.write_header(output_sink, stats);
 		capture.start();
 
+		/* 前三帧用于等待 sensor 曝光、ISP 和多级队列稳定，不进入结果统计。 */
 		unsigned int timeouts = 0;
 		for (unsigned int i = 0; i < kSkipFrames; ++i) {
 			const CapturedFrame frame = capture.dequeue(timeouts);
@@ -93,6 +101,10 @@ int main(int argc, char **argv)
 
 		for (unsigned int index = 0; index < kFrames; ++index) {
 			const CapturedFrame frame = capture.dequeue(timeouts);
+			/*
+			 * sequence 由 V4L2 驱动逐帧递增。与上一帧的差值大于 1 表示中间有帧
+			 * 没送到本程序；这和编码器主动压缩帧内容不是同一个概念。
+			 */
 			if (have_previous) {
 				const std::uint32_t delta = frame.sequence - previous_sequence;
 				if (delta == 0)

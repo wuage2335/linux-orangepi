@@ -33,6 +33,12 @@
 namespace {
 
 /*
+ * 初学者先区分三个概念：vector 是本进程真正拥有的内存；RGA handle 是驱动
+ * 识别这块内存的凭证；rga_buffer_t 则说明这块内存应按什么宽高和像素格式解释。
+ * wrap/import 都不会自动缩放，真正执行硬件任务的是后面的 imresize()。
+ */
+
+/*
  * 第一版固定输入输出，避免“任意尺寸/任意格式”掩盖硬件接口问题。NV12 由
  * 全分辨率 Y 平面和半尺寸交错 UV 平面组成，总字节数为 width*height*3/2。
  */
@@ -174,6 +180,11 @@ bool resize_once(const rga_buffer_t &src, rga_buffer_t &dst)
 
 int main(int argc, char **argv)
 {
+	/*
+	 * main 的业务步骤只有六步：检查参数、读一帧、导入源/目标内存、验证硬件
+	 * 能力、重复执行 resize、保存最后一帧。每个不同返回码对应一个明确阶段，
+	 * 便于板端脚本判断失败发生在文件、内存导入还是 RGA 执行。
+	 */
 	/* 命令行接口固定为一个输入帧和一个输出帧。 */
 	if (argc != 3) {
 		std::cerr

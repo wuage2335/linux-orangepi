@@ -3,6 +3,16 @@
 #include <sstream>
 #include <stdexcept>
 
+/*
+ * 本文件把 MPP 产生的 H.264 编码 packet 送进 GStreamer，再由 GStreamer 添加
+ * RTP 头并通过 UDP 发到 PC：
+ *
+ *   MPP packet -> appsrc -> queue -> h264parse -> rtph264pay -> udpsink
+ *
+ * MPP 只负责压缩图像，不知道网络地址；GStreamer 只接收已经压缩的数据，不
+ * 操作摄像头。GstRtpSink 是两者之间的适配器，也是网络阻塞与编码线程之间的
+ * 缓冲边界。
+ */
 namespace camera_streaming {
 
 namespace {
@@ -18,6 +28,12 @@ void require_element(GstElement *element, const char *name)
 
 GstBuffer *make_gst_buffer(const camera_mpp::EncodedPacketView &packet)
 {
+	/*
+	 * 这里把 MPP packet 内容复制到 GStreamer 自己管理的 GstBuffer。复制完成后
+	 * MPP 可以释放原 packet，后续 parser/payloader 只持有 GstBuffer。codec
+	 * header 没有显示时间；普通图像 packet 必须携带 PTS，接收端才能按 30fps
+	 * 播放而不是尽快吐完全部数据。
+	 */
 	if (packet.size && !packet.data)
 		throw std::invalid_argument("nonempty encoded packet has no data");
 
@@ -71,6 +87,7 @@ GstRtpSink::~GstRtpSink()
 
 void GstRtpSink::consume(const camera_mpp::EncodedPacketView &packet)
 {
+	/* push_buffer 接管 GstBuffer 所有权，调用者不能再 unref 该 buffer。 */
 	throw_on_bus_error();
 	GstBuffer *buffer = make_gst_buffer(packet);
 	const GstFlowReturn flow =
@@ -91,6 +108,7 @@ void GstRtpSink::end_of_stream()
 
 void GstRtpSink::throw_on_bus_error()
 {
+	/* GStreamer 异步线程的错误通过 bus 返回，在发送循环中转成 C++ 异常。 */
 	if (!bus_)
 		return;
 
@@ -121,12 +139,18 @@ std::uint64_t GstRtpSink::queue_overruns() const
 
 void GstRtpSink::on_queue_overrun(GstElement *, gpointer user_data)
 {
+	/* 队列满意味着网络侧落后；计数会驱动上层合并请求一个新 IDR。 */
 	auto *sink = static_cast<GstRtpSink *>(user_data);
 	sink->queue_overruns_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void GstRtpSink::initialize(const RtpSinkConfig &config)
 {
+	/*
+	 * appsrc 声明输入是按 access unit 对齐的 H.264 Annex-B；leaky downstream
+	 * queue 满时丢旧数据，优先维持低延迟而不是无限积压。rtph264pay 把大帧按
+	 * MTU 分包，并使用 payload type 96 和 90kHz 视频时钟。
+	 */
 	if (config.host.empty())
 		throw std::invalid_argument("RTP host is empty");
 	if (config.port < 1 || config.port > 65535)
@@ -207,6 +231,7 @@ void GstRtpSink::initialize(const RtpSinkConfig &config)
 
 void GstRtpSink::cleanup() noexcept
 {
+	/* 先把 pipeline 置 NULL 停止内部线程，再按引用所有权释放 bus 和 pipeline。 */
 	if (pipeline_)
 		gst_element_set_state(pipeline_, GST_STATE_NULL);
 	if (bus_)

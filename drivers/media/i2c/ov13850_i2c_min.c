@@ -753,6 +753,10 @@ static const struct ov13850_mode * const ov13850_min_supported_modes[] = {
 static int ov13850_min_read_reg(struct i2c_client *client, u16 reg, 
                                 unsigned int len, u32 *val)
 {
+	/*
+	 * I2C/SCCB 只负责配置和查询 sensor。先发送 16 位寄存器地址，再读取 1-4
+	 * 字节数据；真正的 RAW10 图像不会经过这条总线，而是走 MIPI CSI-2。
+	 */
     struct i2c_msg msgs[2];
     __be16 reg_be = cpu_to_be16(reg); // 保证寄存器地址按照内核的大端格式传输
     __be32 data_be = 0;
@@ -787,6 +791,7 @@ static int ov13850_min_read_reg(struct i2c_client *client, u16 reg,
 
 static int ov13850_min_write_reg(struct i2c_client *client, u16 reg, u8 val)
 {
+	/* 一次写事务由“寄存器高字节、低字节、8位值”三个字节组成。 */
 	u8 buf[3];
 	int ret;
 
@@ -834,6 +839,10 @@ static int ov13850_min_write_reg24(struct i2c_client *client,
 static int ov13850_min_write_array(struct i2c_client *client,
 				   const struct ov13850_regval *regs)
 {
+	/*
+	 * 数百个初始化值按数组顺序写入。DELAY 是等待硬件稳定的伪寄存器，END 是
+	 * 结束标记；任何真实寄存器失败都立即终止，避免误以为半套配置已经生效。
+	 */
 	int i;
 	int ret;
 
@@ -1958,6 +1967,10 @@ static int ov13850_min_g_frame_interval(struct v4l2_subdev *sd,
 static void ov13850_min_get_module_inf(struct ov13850_min *cam,
 				       struct rkmodule_inf *inf)
 {
+	/*
+	 * 这里返回的是“模组身份”，不是芯片寄存器 ID。RKAIQ 用 sensor/module/lens
+	 * 三个名字寻找匹配的 IQ JSON，名字不一致时即使能出图也可能没有正确 3A。
+	 */
 	memset(inf, 0, sizeof(*inf));
 	strscpy(inf->base.sensor, "ov13850", sizeof(inf->base.sensor));
 	strscpy(inf->base.module, cam->module_name,
@@ -1968,6 +1981,7 @@ static void ov13850_min_get_module_inf(struct ov13850_min *cam,
 static long ov13850_min_ioctl(struct v4l2_subdev *sd,
 			      unsigned int cmd, void *arg)
 {
+	/* 学习驱动只实现当前 RKAIQ 必需的 module-info 私有命令。 */
 	struct ov13850_min *cam = to_ov13850_min(sd);
 
 	switch (cmd) {
@@ -1984,6 +1998,10 @@ static long ov13850_min_compat_ioctl32(struct v4l2_subdev *sd,
 				       unsigned int cmd,
 				       unsigned long arg)
 {
+	/*
+	 * 32 位用户程序运行在 64 位内核上时，用户指针布局不同。先在内核分配原生
+	 * 结构，调用同一业务实现，再安全复制回用户空间，避免维护两套含义不同的逻辑。
+	 */
 	void __user *up = compat_ptr(arg);
 	struct rkmodule_inf *inf;
 	long ret;
