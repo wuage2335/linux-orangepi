@@ -51,6 +51,90 @@ Stage 6 已完成私有 RKAIQ、module-info、IQ、固定焦点、单摄 online�
 补测，不虚构结果，也不阻塞Stage 6关闭。收口结论见
 [`stage6_rkaiq_3a_validation.md`](stage6_rkaiq_3a_validation.md)。
 
+## 快速视频传输：Orange Pi 到 Windows
+
+默认链路为 `OV13850 -> RKISP -> MPP H.264 -> RTSP/TCP -> Windows GStreamer`。
+下面的命令使用历史验证过的板端目录和默认 RTSP 地址；若 DHCP 改变了板卡 IP，
+只替换 Windows 命令中的 `<BOARD_IP>`。
+
+### 1. Orange Pi：启动 3A、配置 ISP、启动 RTSP
+
+在 Orange Pi 的一个终端中执行：
+
+```bash
+STREAM_ROOT=~/ov13850_opi5pro_learning/stage5/task7-live-rtp
+AIQ_BUNDLE=~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v15
+
+"$AIQ_BUNDLE/bin/run_rkaiq_local.sh" \
+  > /tmp/ov13850-rkaiq.log 2>&1 &
+AIQ_PID=$!
+
+sleep 3
+"$STREAM_ROOT/configure_rkisp_1080p.sh"
+
+"$STREAM_ROOT/streaming/build/bin/v4l2_mpp_rtsp_server" \
+  --device /dev/video11 \
+  --service 8554 \
+  --mount /live \
+  --bitrate 8000000 \
+  --gop 30 \
+  --mtu 1200 \
+  --queue-buffers 2 \
+  --mode dmabuf
+```
+
+`run_rkaiq_local.sh` 让 AE/AWB 生效，改善固定曝光造成的偏暗偏绿；
+`configure_rkisp_1080p.sh` 固定 RKISP 为 1920x1080 NV12；最后一个程序持续提供
+`rtsp://<BOARD_IP>:8554/live`。服务端运行期间保持这个终端不要关闭。
+
+按 `Ctrl+C` 停止 RTSP 后，在同一个终端执行：
+
+```bash
+kill "$AIQ_PID"
+wait "$AIQ_PID"
+```
+
+### 2. Windows PowerShell：接收并显示
+
+先将 `<BOARD_IP>` 替换为 Orange Pi 当前 Wi-Fi 地址，例如历史地址
+`192.168.1.10`。以下命令直接调用 GStreamer，不依赖 PowerShell 执行项目脚本：
+
+```powershell
+$gstBin = Join-Path $env:LOCALAPPDATA 'Programs\gstreamer\1.0\msvc_x86_64\bin'
+$env:Path = "$gstBin;$env:Path"
+
+gst-launch-1.0 -v `
+  rtspsrc location='rtsp://<BOARD_IP>:8554/live' latency=30 protocols=tcp drop-on-latency=true `
+  ! rtph264depay `
+  ! h264parse `
+  ! d3d11h264dec `
+  ! d3d11videosink sync=false
+```
+
+若 Windows 没有 `d3d11h264dec`，使用软件解码版本：
+
+```powershell
+gst-launch-1.0 -v `
+  rtspsrc location='rtsp://<BOARD_IP>:8554/live' latency=30 protocols=tcp drop-on-latency=true `
+  ! rtph264depay `
+  ! h264parse `
+  ! avdec_h264 `
+  ! autovideosink sync=false
+```
+
+项目也提供 [`receive_h264_rtsp.ps1`](../../ov13850_opi5pro_learning/streaming/scripts/receive_h264_rtsp.ps1)，
+会自动选择硬件或软件解码；但 PowerShell 策略可能要求脚本签名。上面的直接
+`gst-launch-1.0` 命令是更稳定的首次验收入口。
+
+### 3. 成功标志与排查顺序
+
+- Orange Pi 输出 `RTSP_SERVER_READY`，随后客户端连接时出现
+  `RTSP_CLIENT_CONNECTED` 和 `IDR_REQUESTED`。
+- Windows 弹出视频窗口，首帧应在很短时间内显示；正常运行时没有持续花屏或
+  延迟累积。
+- Windows 无画面时，依次检查板端 `ip -br addr`、`/dev/video11`、RTSP 服务端
+  日志，再检查 Windows 是否已找到 `gst-launch-1.0` 和 `d3d11h264dec`。
+
 ## 协作约束
 
 这是用户的学习项目。Codex 默认负责讲解、拆分、审查和诊断，用户是主要实践者。未经用户明确授权，不得一次性代写完整阶段或大批量代码。任何完成结论必须附带构建或实机验证证据。
