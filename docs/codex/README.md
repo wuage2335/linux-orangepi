@@ -25,6 +25,7 @@
 19. [`stage6_rkaiq_3a_validation.md`](stage6_rkaiq_3a_validation.md)：RKAIQ/3A 接入、兼容修复、动态 stats 和真实三场景验证。
 20. [`interview_project_star_and_improvements.md`](interview_project_star_and_improvements.md)：面试 STAR 讲述稿、简历 bullets、项目不足和优化路线。
 21. [`pipeline_stage_timing_validation.md`](pipeline_stage_timing_validation.md)：SOF、RKISP、DQBUF、copy、RGA、MPP、GStreamer和启动耗时的实机P50/P95/P99。
+22. [`camera_data_flow_and_copy_analysis.md`](camera_data_flow_and_copy_analysis.md)：从Sensor到Windows显示的buffer、DMA-BUF、CPU copy、硬件DDR读写和RGA/MPP边界。
 
 ## 当前项目主线
 
