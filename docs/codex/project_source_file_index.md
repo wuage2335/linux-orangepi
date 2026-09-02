@@ -61,6 +61,17 @@
 - `ov13850_opi5pro_learning/rkaiq/patches/0001-ov13850-learning-compat.patch`：记录
   RKAIQ 实体名、固定焦点、online 和 ISP3 ABI 的最小兼容改动。
 
+## 性能测量
+
+- `ov13850_opi5pro_learning/benchmarks/src/pipeline_stage_benchmark.cpp`：逐帧记录
+  V4L2 timestamp、DQBUF、copy、MPP、GStreamer sink和QBUF耗时并输出CSV。
+- `ov13850_opi5pro_learning/benchmarks/include/timing_stats.hpp`：统一mean、min、
+  P50、P95、P99和max统计。
+- `ov13850_opi5pro_learning/benchmarks/scripts/sample_rkisp_proc.py`：按frame id采集
+  RKISP online/output delay、vblank、frameloss和bufcnt。
+- `ov13850_opi5pro_learning/benchmarks/scripts/run_pipeline_timing_matrix.sh`：执行
+  copy、DMA-BUF、RTP与RGA五轮固定矩阵。
+
 ## 推荐阅读顺序
 
 ```text

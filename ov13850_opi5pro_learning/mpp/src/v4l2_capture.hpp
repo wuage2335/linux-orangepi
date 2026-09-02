@@ -37,6 +37,8 @@ struct CapturedFrame {
 	unsigned int index;
 	const unsigned char *data;
 	std::uint32_t sequence;
+	std::uint64_t timestamp_ns;
+	std::uint32_t timestamp_flags;
 };
 
 inline int v4l2_xioctl(int fd, unsigned long request, void *argument)
@@ -136,6 +138,9 @@ public:
 			buffer.index,
 			static_cast<const unsigned char *>(buffers_[buffer.index].address),
 			buffer.sequence,
+			static_cast<std::uint64_t>(buffer.timestamp.tv_sec) * 1000000000ULL +
+				static_cast<std::uint64_t>(buffer.timestamp.tv_usec) * 1000ULL,
+			buffer.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK,
 		};
 	}
 

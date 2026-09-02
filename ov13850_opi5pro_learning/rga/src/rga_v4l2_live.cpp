@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "im2d.hpp"
+#include "timing_stats.hpp"
 
 /*
  * 阶段 3 第一版实时 RGA copy path：
@@ -52,6 +53,7 @@ namespace {
  */
 
 using SteadyClock = std::chrono::steady_clock;
+using camera_timing::SampleSeries;
 
 /*
  * 固定数据契约对应已经验证的 RKISP mainpath。第一版不接受任意格式，避免把
@@ -658,6 +660,8 @@ int main(int argc, char **argv)
 
 		double copy_total_us = 0.0;
 		double rga_total_us = 0.0;
+		SampleSeries copy_samples("copy_us");
+		SampleSeries rga_samples("rga_us");
 		std::uint64_t dropped = 0;
 		std::uint32_t previous_sequence = 0;
 		bool have_previous_sequence = false;
@@ -690,6 +694,7 @@ int main(int argc, char **argv)
 					    frame.data, kSrcSize);
 				const auto copy_end = SteadyClock::now();
 				copy_total_us += elapsed_us(copy_start, copy_end);
+				copy_samples.add(elapsed_us(copy_start, copy_end));
 
 				capture.requeue(frame.index);
 
@@ -697,12 +702,14 @@ int main(int argc, char **argv)
 				copy_resizer->resize();
 				const auto rga_end = SteadyClock::now();
 				rga_total_us += elapsed_us(rga_start, rga_end);
+				rga_samples.add(elapsed_us(rga_start, rga_end));
 			} else {
 				/* direct RGA 完成前不能 QBUF，避免驱动覆盖源帧。 */
 				const auto rga_start = SteadyClock::now();
 				direct_resizer->resize(frame.index);
 				const auto rga_end = SteadyClock::now();
 				rga_total_us += elapsed_us(rga_start, rga_end);
+				rga_samples.add(elapsed_us(rga_start, rga_end));
 
 				capture.requeue(frame.index);
 			}
@@ -757,6 +764,9 @@ int main(int argc, char **argv)
 			  << "cpu_user_ms=" << cpu_user_ms
 			  << " cpu_system_ms=" << cpu_system_ms
 			  << " process_cpu_percent=" << process_cpu_percent << '\n';
+		if (mode == InputMode::Copy)
+			copy_samples.print(std::cout);
+		rga_samples.print(std::cout);
 		std::cout << "RGA_V4L2_LIVE_OK\n";
 	} catch (const std::exception &error) {
 		/* 栈展开先触发 RAII 清理，再统一删除输出并转成稳定的 ERROR: 契约。 */

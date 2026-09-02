@@ -79,6 +79,10 @@
   学习驱动源码提交为
   `592d4171c feat(ov13850): complete stage 2 learning driver`。验证文档提交见最新
   `git log`；继续前始终重新读取 `git status -sb`。
+- 2026-09-02新增分阶段耗时实测：固定1080p30下RKISP SOF到mainpath完成27ms、
+  SOF到DQBUF P50 28.50ms、3.11MB copy P50 2.03ms、MPP DMA-BUF编码P50
+  4.83ms、真实8Mbps GStreamer push P50 60.67us。完整结果和口径见
+  `docs/codex/pipeline_stage_timing_validation.md`。
 
 ## 2. 已验证的历史事实与当前边界
 
