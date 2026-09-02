@@ -4,18 +4,18 @@
 
 ## Tasks
 
-- [ ] Record board/kernel/camera/RKISP/MPP/RGA/GStreamer environment.
-- [ ] RED: add failing tests for percentile statistics and V4L2 timestamps.
-- [ ] GREEN: implement timing helper and capture timestamp propagation.
-- [ ] Add pipeline benchmark with null/RTP sinks and per-frame CSV.
-- [ ] Add RGA per-call percentile reporting.
-- [ ] Add RKISP procfs sampler and five-run aggregator.
-- [ ] Build host contracts and native aarch64 binaries.
-- [ ] Deploy an isolated timing bundle without replacing system libraries.
-- [ ] Run deterministic copy, DMA-BUF, RGA and RTP timing matrix.
-- [ ] Run normal-scene RKAIQ cross-check and collect CPU/RSS/temperature.
-- [ ] Inspect PM state and new kernel fault logs after every group.
-- [ ] Write quantitative results with measurement boundaries.
+- [x] Record board/kernel/camera/RKISP/MPP/RGA/GStreamer environment.
+- [x] RED: add failing tests for percentile statistics and V4L2 timestamps.
+- [x] GREEN: implement timing helper and capture timestamp propagation.
+- [x] Add pipeline benchmark with null/RTP sinks and per-frame CSV.
+- [x] Add RGA per-call percentile reporting.
+- [x] Add RKISP procfs sampler and five-run aggregation workflow.
+- [x] Build host contracts and native aarch64 binaries.
+- [x] Deploy an isolated timing bundle without replacing system libraries.
+- [x] Run deterministic copy, DMA-BUF, RGA and RTP timing matrix.
+- [x] Run current-scene RKAIQ cross-check and collect CPU/RSS/temperature.
+- [x] Inspect PM state and new kernel fault logs after every group.
+- [x] Write quantitative results with measurement boundaries.
 - [ ] Commit and merge locally; leave push to the user.
 
 ## Expected Commands

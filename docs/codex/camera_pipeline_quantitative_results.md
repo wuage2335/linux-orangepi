@@ -410,3 +410,22 @@ RGA约1.63-3.17ms；推荐DMA-BUF，且无需变换时绕过RGA。3A额外约0.9
 凭借长会话21,561帧/717.58秒、网络抖动矩阵、断开重连、路径性能对比、3A实景
 画质、PM与fault检查，Stage 6于2026-08-30完成。完整过程见
 `stage6_rkaiq_3a_validation.md`。
+
+## 11. 2026-09-02分阶段耗时实测
+
+固定1080p30、test pattern、5轮x300帧的关键P50/P95：
+
+| 项目 | P50 | P95 |
+| --- | ---: | ---: |
+| 帧周期 | 33.280ms | 33.306ms |
+| RKISP SOF到mainpath完成 | 27ms | 27ms |
+| SOF到DQBUF | 28.501ms | 28.602ms |
+| 3.11MB CPU copy | 2.030ms | 2.089ms |
+| MPP DMA-BUF编码 | 4.832ms | 4.962ms |
+| DMA post-DQ关键区 | 5.358ms | 5.522ms |
+| copy post-DQ关键区 | 7.020ms | 7.132ms |
+| 真实8Mbps GStreamer push | 60.67us | 89.83us |
+
+RGA 1920x1080到1280x720五轮均值约2.72-2.90ms；当前1080p编码链路按需绕过。
+DMA-BUF相对copy将进程CPU从8.2%降到3.2%。完整统计、启动耗时、3A暗场和
+测量边界见`pipeline_stage_timing_validation.md`。

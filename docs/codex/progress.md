@@ -1,5 +1,18 @@
 # linux-orangepi 阅读进度
 
+## 2026-09-02 分阶段耗时实测
+
+- 新增独立`pipeline_stage_benchmark`，记录V4L2内核timestamp、DQBUF等待、
+  SOF到用户态、copy、MPP、GStreamer sink、QBUF和post-DQ关键区，输出逐帧CSV。
+- 固定场景copy/DMA-BUF/RTP各5轮，每轮300帧；RGA copy/direct各5轮；3A当前
+  实景null/RTP各5轮。全部0 timeout/drop/overrun，退出后PM suspended/0。
+- 固定30fps下RKISP output delay为27ms，SOF到DQBUF P50为28.50ms，copy P50
+  2.03ms，MPP P50 4.83ms，真实码流GStreamer push P50 60.67us。
+- DMA-BUF把post-DQ平均耗时从6.87ms降到5.23ms，CPU从8.2%降到3.2%。
+- 当前暗场3A把帧周期从33.28ms扩展到60.34ms，根因是exposure/VTS达到
+  2995/1449，不是算法CPU耗时；RKAIQ约2.38% CPU、14.3MB RSS。
+- 原始结果包SHA256为`c9875c14dbac47cd9b8f8eddbaf2e76db7ba9babf9b78a7391d26196d9e0d1a9`。
+
 ## 2026-08-30 Stage 6 收口
 
 - 阶段0-6正式完成，阶段7 AI感知与业务扩展保持可选。
