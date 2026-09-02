@@ -16,7 +16,9 @@
 - [x] Run current-scene RKAIQ cross-check and collect CPU/RSS/temperature.
 - [x] Inspect PM state and new kernel fault logs after every group.
 - [x] Write quantitative results with measurement boundaries.
-- [ ] Commit and merge locally; leave push to the user.
+- [x] Commit and merge locally; leave push to the user.
+
+Local merge commit: `7b02f82f6 merge: add camera pipeline timing benchmark`.
 
 ## Expected Commands
 
