@@ -13,7 +13,11 @@ void exercise_capture_contract()
 
 	capture.start();
 	const CapturedFrame frame = capture.dequeue(timeouts);
+	const std::uint64_t timestamp_ns = frame.timestamp_ns;
+	const std::uint32_t timestamp_flags = frame.timestamp_flags;
 	MppBuffer buffer = capture.mpp_buffer(frame.index);
+	(void)timestamp_ns;
+	(void)timestamp_flags;
 	(void)buffer;
 	capture.requeue(frame.index);
 	capture.stop();
