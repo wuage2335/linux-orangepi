@@ -3,11 +3,14 @@
 #include <sstream>
 #include <stdexcept>
 
-/*
+/**
+ * @file gst_rtp_sink.cpp
+ * @brief 实现从 MPP 编码包到 GStreamer RTP/UDP 输出的适配层。
+ *
  * 本文件把 MPP 产生的 H.264 编码 packet 送进 GStreamer，再由 GStreamer 添加
  * RTP 头并通过 UDP 发到 PC：
  *
- *   MPP packet -> appsrc -> queue -> h264parse -> rtph264pay -> udpsink
+ *   MPP 编码包 -> appsrc -> queue -> h264parse -> rtph264pay -> udpsink
  *
  * MPP 只负责压缩图像，不知道网络地址；GStreamer 只接收已经压缩的数据，不
  * 操作摄像头。GstRtpSink 是两者之间的适配器，也是网络阻塞与编码线程之间的
@@ -17,6 +20,12 @@ namespace camera_streaming {
 
 namespace {
 
+/**
+ * @brief 确认一个 GStreamer 元素已经成功创建。
+ * @param element 待检查的元素指针。
+ * @param name 用于错误信息的元素名称。
+ * @throws std::runtime_error 元素为空时抛出。
+ */
 void require_element(GstElement *element, const char *name)
 {
 	if (!element)
@@ -24,7 +33,7 @@ void require_element(GstElement *element, const char *name)
 					 name);
 }
 
-} // namespace
+} // 匿名命名空间
 
 GstBuffer *make_gst_buffer(const camera_mpp::EncodedPacketView &packet)
 {
@@ -244,4 +253,4 @@ void GstRtpSink::cleanup() noexcept
 	queue_ = nullptr;
 }
 
-} // namespace camera_streaming
+} // 命名空间 camera_streaming

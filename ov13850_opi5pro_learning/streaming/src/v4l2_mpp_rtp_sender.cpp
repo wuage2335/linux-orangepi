@@ -15,10 +15,13 @@
 #include "mpp_encoder_core.hpp"
 #include "v4l2_capture.hpp"
 
-/*
+/**
+ * @file v4l2_mpp_rtp_sender.cpp
+ * @brief 组合 V4L2、MPP 与 GStreamer 的有限帧数 RTP/UDP 发送程序。
+ *
  * 这是阶段 5 的实时 RTP 主程序，负责把前面各阶段拼成一条有限时长链路：
  *
- *   /dev/video11 NV12 -> V4L2 buffer -> MPP H.264 -> GStreamer RTP/UDP -> PC
+ *   /dev/video11 NV12 -> V4L2 缓冲区 -> MPP H.264 -> GStreamer RTP/UDP -> PC
  *
  * 它不提供 RTSP 会话管理；接收端必须事先知道 IP、端口和 H.264/RTP 参数。
  * 该程序适合做固定帧数、丢帧、码率和端到端延迟实验。
@@ -33,6 +36,9 @@ using Clock = std::chrono::steady_clock;
 constexpr unsigned int kSkipFrames = 3;
 std::atomic<bool> stop_requested{false};
 
+/**
+ * @brief RTP 发送程序解析后的命令行参数。
+ */
 struct CommandLine {
 	std::string device = "/dev/video11";
 	std::string host;
@@ -45,12 +51,24 @@ struct CommandLine {
 	bool use_dmabuf = true;
 };
 
+/**
+ * @brief 处理 SIGINT/SIGTERM，仅设置停止标志；本实现无需区分具体信号编号。
+ */
 void handle_signal(int)
 {
 	/* signal handler 只设置原子标志，资源清理由正常 C++ 控制流完成。 */
 	stop_requested.store(true, std::memory_order_relaxed);
 }
 
+/**
+ * @brief 将命令行字符串解析为指定范围内的整数。
+ * @param text 待解析字符串。
+ * @param option 参数名称，用于生成错误信息。
+ * @param minimum 允许的最小值。
+ * @param maximum 允许的最大值。
+ * @return 通过校验的整数值。
+ * @throws std::runtime_error 字符串不是完整整数或数值越界时抛出。
+ */
 int parse_integer(const char *text, const char *option, int minimum, int maximum)
 {
 	std::size_t consumed = 0;
@@ -65,6 +83,13 @@ int parse_integer(const char *text, const char *option, int minimum, int maximum
 	return static_cast<int>(value);
 }
 
+/**
+ * @brief 解析 RTP 发送程序的成对命令行选项。
+ * @param argc 参数数量。
+ * @param argv 参数字符串数组。
+ * @return 已校验的命令行配置。
+ * @throws std::runtime_error 缺少必填项、选项未知或参数无效时抛出。
+ */
 CommandLine parse_command_line(int argc, char **argv)
 {
 	CommandLine command;
@@ -113,6 +138,10 @@ CommandLine parse_command_line(int argc, char **argv)
 	return command;
 }
 
+/**
+ * @brief 输出 RTP 发送程序的命令行用法。
+ * @param program 当前可执行文件名。
+ */
 void print_usage(const char *program)
 {
 	std::cerr << "usage: " << program << '\n'
@@ -121,14 +150,19 @@ void print_usage(const char *program)
 		  << "  [--mtu 1200] [--queue-buffers 2] [--mode dmabuf|copy]\n";
 }
 
-} // namespace
+} // 匿名命名空间
 
+/**
+ * @brief 运行有限帧数的 V4L2→MPP→RTP 实时发送流程。
+ * @param argc 参数数量。
+ * @param argv 参数字符串数组。
+ * @return 成功返回 0，参数错误返回 2，运行错误返回 1，信号中断返回 130。
+ *
+ * 本函数同时拥有 capture、encoder 和 RTP sink，因此可以规定正确销毁顺序：
+ * 停止采集、发送 EOS、检查 bus，随后由 RAII 析构各硬件与网络资源。
+ */
 int main(int argc, char **argv)
 {
-	/*
-	 * main 同时拥有 capture、encoder 和 RTP sink，因此能规定正确销毁顺序：
-	 * 停采集、发送 EOS、检查 bus，随后 RAII 析构各硬件/网络资源。
-	 */
 	CommandLine command;
 	try {
 		command = parse_command_line(argc, argv);

@@ -15,7 +15,10 @@
 #include "mpp_encoder_core.hpp"
 #include "v4l2_capture.hpp"
 
-/*
+/**
+ * @file v4l2_mpp_rtsp_server.cpp
+ * @brief 组合 V4L2、MPP 与 GStreamer 的共享 RTSP 服务程序。
+ *
  * 这是共享 RTSP 服务的组合入口。程序内部只有一套 V4L2 capture 和一套 MPP
  * encoder：后台 worker 持续采集编码，主线程运行 GLib/RTSP 事件循环。
  * 客户端只是订阅当前码流，不拥有也不重启摄像头。
@@ -30,6 +33,9 @@ using Clock = std::chrono::steady_clock;
 constexpr unsigned int kSkipFrames = 3;
 std::atomic<bool> signal_stop_requested{false};
 
+/**
+ * @brief RTSP 服务解析后的命令行参数。
+ */
 struct CommandLine {
 	std::string device = "/dev/video11";
 	int service = 8554;
@@ -41,6 +47,9 @@ struct CommandLine {
 	bool use_dmabuf = true;
 };
 
+/**
+ * @brief 采集线程返回给主线程的统计结果与异常状态。
+ */
 struct WorkerResult {
 	/* worker 结束后把统计和异常统一交还 main，避免跨线程直接抛异常。 */
 	EncoderStats encoder;
@@ -52,11 +61,23 @@ struct WorkerResult {
 	std::exception_ptr error;
 };
 
+/**
+ * @brief 处理 SIGINT/SIGTERM，仅设置跨线程停止标志；本实现无需区分信号编号。
+ */
 void handle_signal(int)
 {
 	signal_stop_requested.store(true, std::memory_order_relaxed);
 }
 
+/**
+ * @brief 将命令行字符串解析为指定范围内的整数。
+ * @param text 待解析字符串。
+ * @param option 参数名称，用于生成错误信息。
+ * @param minimum 允许的最小值。
+ * @param maximum 允许的最大值。
+ * @return 通过校验的整数值。
+ * @throws std::runtime_error 字符串不是完整整数或数值越界时抛出。
+ */
 int parse_integer(const char *text, const char *option, int minimum, int maximum)
 {
 	std::size_t consumed = 0;
@@ -71,6 +92,13 @@ int parse_integer(const char *text, const char *option, int minimum, int maximum
 	return static_cast<int>(value);
 }
 
+/**
+ * @brief 解析共享 RTSP 服务的成对命令行选项。
+ * @param argc 参数数量。
+ * @param argv 参数字符串数组。
+ * @return 已校验的命令行配置。
+ * @throws std::runtime_error 选项缺值、名称未知或参数无效时抛出。
+ */
 CommandLine parse_command_line(int argc, char **argv)
 {
 	CommandLine command;
@@ -115,6 +143,10 @@ CommandLine parse_command_line(int argc, char **argv)
 	return command;
 }
 
+/**
+ * @brief 输出共享 RTSP 服务的命令行用法。
+ * @param program 当前可执行文件名。
+ */
 void print_usage(const char *program)
 {
 	std::cerr << "usage: " << program << '\n'
@@ -123,15 +155,21 @@ void print_usage(const char *program)
 		  << "  [--queue-buffers 2] [--mode dmabuf|copy]\n";
 }
 
+/**
+ * @brief 持续执行唯一一套 V4L2 采集和 MPP 编码循环。
+ * @param command 已校验的运行参数。
+ * @param sink 与主线程共享的 RTSP 编码包接收器。
+ * @param worker_stop 主线程发出的停止标志。
+ * @param result 返回帧统计、编码统计和异常信息的共享结果对象。
+ *
+ * worker 是唯一允许调用 V4L2 和 MPP 的线程，因此编码控制、输入帧和 DMA-BUF
+ * 所有权保持串行；RTSP 回调只发布“需要 IDR”等轻量请求。
+ */
 void run_capture_worker(const CommandLine &command,
 			GstRtspServerSink &sink,
 			std::atomic<bool> &worker_stop,
 			WorkerResult &result)
 {
-	/*
-	 * worker 是唯一允许调用 V4L2 和 MPP 的线程。这样 encoder control、输入帧和
-	 * DMA-BUF 所有权天然串行；RTSP 回调只发布“需要 IDR”等轻量请求。
-	 */
 	try {
 		EncoderConfig encoder_config;
 		encoder_config.bitrate = command.bitrate;
@@ -140,7 +178,9 @@ void run_capture_worker(const CommandLine &command,
 
 		const V4L2MemoryMode memory_mode = command.use_dmabuf ?
 			V4L2MemoryMode::DmaBufExport : V4L2MemoryMode::MmapOnly;
+		/* V4L2Capture 从 RKISP 取出 NV12 帧，并负责归还采集缓冲区。 */
 		V4L2Capture capture(command.device.c_str(), memory_mode);
+		/* MppEncoder 将 NV12 图像编码为供 RTSP 服务发送的 H.264 码流。 */
 		MppEncoder encoder(encoder_config);
 		encoder.write_header(sink, result.encoder);
 		capture.start();
@@ -208,15 +248,20 @@ void run_capture_worker(const CommandLine &command,
 	sink.request_stop();
 }
 
-} // namespace
+} // 匿名命名空间
 
+/**
+ * @brief 启动共享 RTSP 服务并协调主循环与采集编码线程。
+ * @param argc 参数数量。
+ * @param argv 参数字符串数组。
+ * @return 成功返回 0，参数错误返回 2，运行错误返回 1。
+ *
+ * 关闭协议为：通知 worker、退出 GLib 主循环、等待 worker、检查两侧错误、输出
+ * 统计。无论 Ctrl+C、采集失败还是 GStreamer bus 错误都走同一清理路径，避免
+ * 后台线程访问已经析构的 sink。
+ */
 int main(int argc, char **argv)
 {
-	/*
-	 * main 的关闭协议是：通知 worker -> 退出 GLib loop -> join worker -> 检查两边
-	 * 的错误 -> 输出统计。无论 Ctrl+C、采集失败还是 GStreamer bus error，都走
-	 * 同一清理路径，避免后台线程继续访问已经析构的 sink。
-	 */
 	CommandLine command;
 	try {
 		command = parse_command_line(argc, argv);
@@ -236,6 +281,7 @@ int main(int argc, char **argv)
 		rtsp_config.mtu = command.mtu;
 		rtsp_config.queue_buffers = command.queue_buffers;
 
+		/* GstRtspServerSink 接收 H.264 编码包，并交给共享 RTSP 管线发送。 */
 		GstRtspServerSink sink(rtsp_config);
 		std::atomic<bool> worker_stop{false};
 		WorkerResult result;

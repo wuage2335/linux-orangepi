@@ -7,11 +7,14 @@
 
 #include "gst_rtp_sink.hpp"
 
-/*
+/**
+ * @file gst_rtsp_server.cpp
+ * @brief 实现单摄像头、单编码器的共享 RTSP 输出服务。
+ *
  * 本文件实现“共享 RTSP 出口”。摄像头和 MPP 编码器由外部 worker 持续运行，
  * RTSP 客户端可以随时连接或断开，而不会为每个客户端重新打开摄像头：
  *
- *   MPP packet -> shared appsrc -> h264parse -> rtph264pay -> RTSP client
+ *   MPP 编码包 -> 共享 appsrc -> h264parse -> rtph264pay -> RTSP 客户端
  *
  * 没有客户端时 packet 直接丢弃，防止形成历史画面积压；新客户端连接后先补
  * codec header，再请求一幅 IDR，使播放器能从当前时刻开始解码。
@@ -20,6 +23,11 @@ namespace camera_streaming {
 
 namespace {
 
+/**
+ * @brief 校验 RTSP 服务配置是否满足 GStreamer 与网络参数约束。
+ * @param config 待校验的服务配置。
+ * @throws std::invalid_argument 服务端口、挂载点、负载类型、MTU 或队列参数无效时抛出。
+ */
 void validate_config(const RtspServerConfig &config)
 {
 	if (config.service.empty())
@@ -34,6 +42,12 @@ void validate_config(const RtspServerConfig &config)
 		throw std::invalid_argument("RTSP queue buffer count must be positive");
 }
 
+/**
+ * @brief 将一个编码包转换为 GstBuffer 并推送到指定 appsrc。
+ * @param appsrc 当前已准备好的 GStreamer appsrc 元素。
+ * @param packet 待推送的 H.264 编码包。
+ * @return GStreamer 返回的流状态；appsrc 接管新建缓冲区的所有权。
+ */
 GstFlowReturn push_packet(GstElement *appsrc,
 			  const camera_mpp::EncodedPacketView &packet)
 {
@@ -41,7 +55,7 @@ GstFlowReturn push_packet(GstElement *appsrc,
 	return gst_app_src_push_buffer(GST_APP_SRC(appsrc), buffer);
 }
 
-} // namespace
+} // 匿名命名空间
 
 GstRtspServerSink::GstRtspServerSink(const RtspServerConfig &config)
 {
@@ -158,7 +172,7 @@ void GstRtspServerSink::request_stop()
 bool GstRtspServerSink::take_client_idr_request()
 {
 	std::lock_guard<std::mutex> lock(state_mutex_);
-	/* Wait until appsrc exists so the requested IDR cannot be discarded. */
+	/* 必须等 appsrc 就绪后再取走请求，避免新客户端需要的 IDR 被提前丢弃。 */
 	if (!idr_pending_ || !appsrc_ || active_clients_ == 0)
 		return false;
 	idr_pending_ = false;
@@ -455,7 +469,7 @@ void GstRtspServerSink::initialize(const RtspServerConfig &config)
 	GstRTSPMountPoints *mounts = gst_rtsp_server_get_mount_points(server_);
 	if (!mounts)
 		throw std::runtime_error("failed to get RTSP mount points");
-	/* add_factory transfers ownership to the mount table. */
+	/* add_factory 会把 factory 的所有权转移给挂载表。 */
 	gst_rtsp_mount_points_add_factory(mounts, config_.mount.c_str(), factory_);
 	g_object_unref(mounts);
 
@@ -528,4 +542,4 @@ void GstRtspServerSink::cleanup() noexcept
 	main_loop_ = nullptr;
 }
 
-} // namespace camera_streaming
+} // 命名空间 camera_streaming

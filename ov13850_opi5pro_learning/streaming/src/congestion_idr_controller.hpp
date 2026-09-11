@@ -5,12 +5,19 @@
 
 namespace camera_streaming {
 
-/*
- * Coalesces one or more queue-overrun observations into a bounded-rate IDR
- * request. A pending request survives the cooldown instead of being lost.
+/**
+ * @brief 将一次或多次发送队列溢出合并为限频的 IDR 请求。
+ *
+ * 队列溢出表示接收或网络侧已经落后。控制器会记住冷却期内尚未处理的请求，
+ * 等到允许的帧序号再触发 IDR，既帮助解码端恢复，又避免连续请求关键帧。
  */
 class CongestionIdrController {
 public:
+	/**
+	 * @brief 创建拥塞恢复控制器。
+	 * @param cooldown_frames 两次 IDR 请求之间至少间隔的编码帧数。
+	 * @throws std::invalid_argument 当冷却帧数不为正数时抛出。
+	 */
 	explicit CongestionIdrController(std::int64_t cooldown_frames)
 		: cooldown_frames_(cooldown_frames)
 	{
@@ -18,6 +25,12 @@ public:
 			throw std::invalid_argument("IDR cooldown must be positive");
 	}
 
+	/**
+	 * @brief 根据累计队列溢出数判断当前帧是否需要请求 IDR。
+	 * @param total_overruns 发送队列自启动以来的累计溢出次数。
+	 * @param frame_index 当前编码帧序号，用于执行冷却限频。
+	 * @return 当前帧应请求 IDR 时返回 true，否则返回 false。
+	 */
 	bool observe(std::uint64_t total_overruns, std::int64_t frame_index)
 	{
 		if (total_overruns < last_overruns_) {
@@ -45,11 +58,19 @@ public:
 		return true;
 	}
 
+	/**
+	 * @brief 获取已经观察到的队列溢出事件总数。
+	 * @return 相邻采样之间新增溢出次数的累计值。
+	 */
 	std::uint64_t overrun_events() const
 	{
 		return overrun_events_;
 	}
 
+	/**
+	 * @brief 获取控制器已经触发的 IDR 请求次数。
+	 * @return IDR 请求累计值。
+	 */
 	std::uint64_t idr_requests() const
 	{
 		return idr_requests_;
@@ -65,4 +86,4 @@ private:
 	bool pending_ = false;
 };
 
-} // namespace camera_streaming
+} // 命名空间 camera_streaming
