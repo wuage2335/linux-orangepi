@@ -83,10 +83,14 @@ int parse_integer(const char *text, const char *option, int minimum, int maximum
 	std::size_t consumed = 0;
 	long long value;
 	try {
+		// std::stoll 会抛出 std::invalid_argument 或 std::out_of_range 异常,
+		// 但是如果入参开头为数字, 即使后面有字母也不会识别出来
 		value = std::stoll(text, &consumed, 10);
 	} catch (const std::exception &) {
 		throw std::runtime_error(std::string(option) + " must be an integer");
 	}
+	// 因此在这里检查末尾是否为 '\0', 如果不是则说明有非数字字符, 需要手动抛出异常
+	// 做入参范围检查, 如果不在范围内也抛出异常
 	if (text[consumed] != '\0' || value < minimum || value > maximum)
 		throw std::runtime_error(std::string(option) + " is out of range");
 	return static_cast<int>(value);
@@ -264,13 +268,14 @@ int main(int argc, char **argv)
 {
 	CommandLine command;
 	try {
+		// 从命令行解析参数，若有错误则抛出异常并打印用法。
 		command = parse_command_line(argc, argv);
 	} catch (const std::exception &error) {
 		std::cerr << "ERROR: " << error.what() << '\n';
 		print_usage(argv[0]);
 		return 2;
 	}
-
+	// 注册退出信号, 分别来自ctrl+c, 和 kill命令, 让主线程和worker线程都能收到退出信号
 	std::signal(SIGINT, handle_signal);
 	std::signal(SIGTERM, handle_signal);
 
@@ -283,6 +288,7 @@ int main(int argc, char **argv)
 
 		/* GstRtspServerSink 接收 H.264 编码包，并交给共享 RTSP 管线发送。 */
 		GstRtspServerSink sink(rtsp_config);
+		// 跨线程对象, 用于停止worker线程
 		std::atomic<bool> worker_stop{false};
 		WorkerResult result;
 		std::thread worker(run_capture_worker,
