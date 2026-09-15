@@ -1,5 +1,13 @@
 # RK3588 / OV13850 项目记忆
 
+## 2026-09-16 重启后更新
+
+用户已部署DFI时钟overlay并重启，dmc节点和负载采样恢复。完整功能矩阵通过，
+3A 180秒4461帧24.76fps、0采集timeout/drop；Windows D3D11解码90帧通过，
+退出PM suspended/0、DMC从工作2.4GHz回到空闲534MHz。
+DMC load是DFI最忙通道利用率，不是绝对DDR MB/s。精确光学时延与绝对带宽仍未测。
+详见[工程收口验证](engineering_closeout_validation.md)顶部，早期“候选未部署”已过时。
+
 ## 2026-09-15 实机更新
 
 本轮用户授权自主工程收口，实际工作仓库为WSL `/home/wuage2335/linux-orangepi`，

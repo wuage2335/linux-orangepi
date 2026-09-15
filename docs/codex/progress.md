@@ -1,5 +1,15 @@
 # linux-orangepi 阅读进度
 
+## 2026-09-16 DFI修复后回归
+
+- 用户安装opi5pro-dfi-clocks并重启；确认活动DT时钟属性、dmc注册和Image指纹。
+- 完整功能矩阵通过；3A180秒4461帧24.76fps、0采集timeout/drop，RTSP本机重连
+  和Windows D3D11解码90帧通过；退出PM suspended/0、controls恢复1536/16/96。
+- DMC采样已可用：3A阶段load均值3.77%、0–12%，工作2.4GHz，停流后534MHz。
+  此指标是DFI最忙通道利用率，不能作为绝对MB/s。
+- 证据归档到post-dfi-reboot.tar.gz，analysis.json核验无新增3A硬件故障候选。
+- 剩余精确光学时延和绝对DDR带宽保持未测，未进行新的长时测试。
+
 ## 2026-09-15 工程收口
 
 - 恢复WSL GStreamer/RTSP开发包并构建独立host MPP SDK；完整RTP/RTSP/benchmark

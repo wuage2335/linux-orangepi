@@ -1,6 +1,17 @@
 # RK3588 摄像头链路任务交接文档
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-09-15（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-09-16（Asia/Shanghai）。
+
+## 2026-09-16 重启后验证
+
+- DFI时钟overlay已由用户安装并重启，DMC已正常注册；活动内核Image未改变。
+- 完整功能矩阵再次通过；3A RTSP 180秒4461帧、24.76fps、0采集timeout/drop，
+  本机重连和Windows D3D11解码90帧通过，退出PM suspended/0。
+- DMC工作时2.4GHz、空闲534MHz；3A阶段load均值3.77%、范围0–12%（含启动退出）。
+  这是DFI最忙通道利用率，不能当作全DDR读写MB/s。
+- 备份：`/boot/camera-closeout-backup-20260915-234106`。
+- 仍待补齐：精确光学同屏时延、绝对DDR带宽。当前无需重复长稳。
+- 详细证据见[工程收口验证](engineering_closeout_validation.md)顶部。
 
 ## 2026-09-15 工程收口补充
 
@@ -12,7 +23,7 @@
   [工程收口验证](engineering_closeout_validation.md)；新脚本保留原始日志。
 - 运行中重拷贝MPP动态库曾干扰长稳并导致SIGBUS；已改为原子库安装并添加构建锁。
 - 3A帧率取决于照度与曝光/VTS，历史30fps彩条结果不能推广到所有实景。
-- DDR缺测已定位为活动DT遗漏DFI时钟属性；候选overlay已离线验证，未部署。
+- DDR缺测曾定位为活动DT遗漏DFI时钟属性；9月16日已完成部署后验证，见上节。
 - 最新测量状态、证据与未完成条件统一以本轮验证文档为准。
 - 本轮固定曝光600s：18011帧30.05fps；3A实景1800s：44591帧24.76fps；
   两组均0采集timeout/drop、重连通过、退出PM suspended/0。
