@@ -1,5 +1,23 @@
 # linux-orangepi 阅读进度
 
+## 2026-09-15 工程收口
+
+- 恢复WSL GStreamer/RTSP开发包并构建独立host MPP SDK；完整RTP/RTSP/benchmark
+  编译、现有测试、RKAIQ工具、RGA交叉编译和真实Doxygen解析均通过。
+- 板卡192.168.1.16原生构建通过；独立release下完整MPP/RGA/RTP/RTSP矩阵通过。
+- 新增build_host/build_board/package_closeout/camera_session/run_board_regression/
+  summarize_session入口和生命周期测试，记录原始日志与资源采样。
+- 首次长稳受本轮并行构建覆写MPP库干扰而SIGBUS退出；保留失败证据，增加原子库
+  安装和构建锁，mmap回归测试通过；后续测量期间不再构建活动release。
+- DDR缺测根因为活动DT缺DFI clocks/clock-names；候选overlay离线试合并只增这两个
+  属性，未部署。详细结果与测量条件见engineering_closeout_validation.md。
+- 固定曝光600s与最终3A1800s已通过：分别18011帧30.05fps和44591帧24.76fps，
+  两组采集timeout/drop均为0、两次客户端解码重连通过、PM回到suspended/0。
+- 3A组server/RKAIQ平均CPU3.344%/3.689%，SoC峰值60.076°C；逐秒解码进度检查
+  未触发停滞。固定曝光组保留未运行RKAIQ时的启动params等待告警。
+- 原始证据已回传Windows；controls恢复1536/16/96。仍待用户交互执行DFI候选
+  部署和重启，以及取得光学同屏时钟样本。
+
 ## 2026-09-02 分阶段耗时实测
 
 - 新增独立`pipeline_stage_benchmark`，记录V4L2内核timestamp、DQBUF等待、

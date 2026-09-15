@@ -1,0 +1,21 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/rk3588-cru.h>
+
+/*
+ * 仅供已验证 6.1.99 源码配套的离线候选：补齐活动旧 DTB 遗漏的 DFI 时钟。
+ * 不改变 status、不触碰摄像头节点；需保留启动备份与串口回滚后才可部署。
+ */
+/ {
+    compatible = "rockchip,rk3588";
+    fragment@0 {
+        target = <&dfi>;
+        __overlay__ {
+            clocks = <&cru PCLK_DDR_MON_CH0>, <&cru PCLK_DDR_MON_CH1>,
+                     <&cru PCLK_DDR_MON_CH2>, <&cru PCLK_DDR_MON_CH3>;
+            clock-names = "pclk_ddr_mon_ch0", "pclk_ddr_mon_ch1",
+                          "pclk_ddr_mon_ch2", "pclk_ddr_mon_ch3";
+        };
+    };
+};

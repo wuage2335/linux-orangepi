@@ -1,5 +1,13 @@
 # RK3588 / OV13850 项目记忆
 
+## 2026-09-15 实机更新
+
+本轮用户授权自主工程收口，实际工作仓库为WSL `/home/wuage2335/linux-orangepi`，
+当前板卡地址`192.168.1.16`。WSL已恢复GStreamer/RTSP开发包；host SDK与aarch64
+部署SDK分开管理，完整应用编译和板端功能矩阵通过。
+新的一键入口、原子动态库安装修复、3A/固定曝光对照及DDR阻塞证据见
+[工程收口验证](engineering_closeout_validation.md)。以下各节保留9月14日的历史快照。
+
 更新日期：2026-09-14（Asia/Hong_Kong）。仓库位置：`linux-orangepi-dev:/workspace/linux-orangepi`。
 
 本文件用于新对话快速恢复项目上下文；正式交接入口仍为 [HANDOFF.md](HANDOFF.md)。本轮依据容器中的文档、Git 状态及少量源码核对整理，未连接开发板、构建或重新执行性能测试。下文实机数据均为项目已有验收记录，不代表今天复测。相对链接以容器内 `docs/codex/PROJECT_MEMORY.md` 为基准；宿主机同名文件仅为阅读副本。
