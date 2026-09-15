@@ -24,7 +24,8 @@ RTSP_SOURCES := \
 SHARED_HEADERS := \
 	$(MPP_SRC)/encoded_packet_sink.hpp \
 	$(MPP_SRC)/mpp_encoder_core.hpp \
-	$(MPP_SRC)/v4l2_capture.hpp
+	$(MPP_SRC)/v4l2_capture.hpp \
+	$(wildcard $(ROOT)/src/*.hpp)
 SMOKE_SOURCE := $(ROOT)/tests/check_streaming_build.cpp
 RTP_SINK_TEST_SOURCE := $(ROOT)/tests/test_gst_rtp_sink.cpp
 RTP_SINK_SOURCE := $(ROOT)/src/gst_rtp_sink.cpp
@@ -57,7 +58,7 @@ check-env:
 
 runtime-lib:
 	@mkdir -p $(LIB_DIR)
-	cp -a $(MPP_BUNDLE)/lib/librockchip_mpp.so* $(LIB_DIR)/
+	python3 $(ROOT)/scripts/install_mpp_runtime.py $(MPP_BUNDLE)/lib $(LIB_DIR)
 
 $(SMOKE_BIN): $(SMOKE_SOURCE) | check-env runtime-lib
 	@mkdir -p $(BIN_DIR)

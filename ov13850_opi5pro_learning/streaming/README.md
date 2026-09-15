@@ -1,5 +1,44 @@
 # Orange Pi 5 Pro Low-Latency Streaming
 
+## 工程收口入口（2026-09-15）
+
+WSL安装GStreamer/RTSP开发包后，使用固定MPP源码做主机编译：
+
+```bash
+MPP_SOURCE=/path/to/pinned/mpp bash streaming/scripts/build_host.sh
+```
+
+`MPP_SOURCE`须为项目固定的MPP 1.1.0提交，host SDK和输出放在独立目录，不能当作
+板端二进制。板端解压完整包后：
+
+```bash
+bash streaming/scripts/build_board.sh
+bash streaming/scripts/run_board_regression.sh ./evidence/functional-new
+python3 streaming/scripts/camera_session.py --output ./evidence/live-new
+```
+
+最后一条命令自动启动私有RKAIQ、配置RKISP并运行RTSP。Ctrl+C停止本次会话；
+可用`--duration 600 --decode-check`执行定时解码/重连验证。`--no-aiq`用于固定曝光
+对照，调用者应先设置并记录曝光与VBLANK。输出目录必须不存在，防止覆盖证据。
+
+默认使用已有的`~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v15`；可通过
+`--aiq-runner /path/to/run_rkaiq_local.sh`替换。设备变化时指定`--device`和`--sensor`。
+Windows端继续使用现有接收器（地址使用当前板卡IP）：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\streaming\scripts\receive_h264_rtsp.ps1 -Uri rtsp://192.168.1.16:8554/live -LatencyMs 30 -Decoder auto
+```
+
+从原始采样重算CPU/RSS/温度：
+
+```bash
+python3 streaming/scripts/summarize_session.py ./evidence/live-new --clock-ticks 100
+```
+
+构建和运行共用锁。禁止绕开锁在运行中的release原地更新可执行文件。
+MPP库安装已改为原子替换，避免旧版cp截断已映射库导致SIGBUS。
+完整结果见[工程收口验证](../../docs/codex/engineering_closeout_validation.md)。
+
 本目录实现阶段 5 的 H.264 RTP/UDP 与后续 RTSP。当前已验证路径：
 
 ```text
@@ -123,7 +162,7 @@ STREAM_RTP_OK
 - 1800 帧实时运行约 60 秒，30.05 fps，0 timeout/drop/queue overrun；
 - Windows 成功协商 H.264 High 1920x1080@30，并使用 D3D11 NV12 显示；
 - 三次同屏计时样本为 100 ms、70 ms、100 ms；
-- 当前图像偏暗偏绿来自未运行 RKAIQ 3A/IQ，不是 RTP/MPP 解码问题；
+- 早期未运行RKAIQ时出现偏暗偏绿；后续Stage 6已经完成AE/AWB接入与实景验证；
 - RTP packet timing和低延迟参数矩阵已完成；shared RTSP和重连也已完成；
 - RTSP五组GStreamer延迟为60/70/10/160/60ms，平均72ms，无累计漂移；
 - VLC播放与重连稳定但约400ms，只作为兼容性客户端。
@@ -178,4 +217,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 bash streaming/tests/test_rtsp_recovery.sh streaming /dev/video11 8554 /live
 ```
 
-手机播放不是当前阶段的完成条件。图像偏暗偏绿仍属于独立RKAIQ 3A/IQ工作项。
+手机播放不是当前阶段的完成条件。3A已接入；低照度下AE可能延长VTS并降低实采
+帧率，因此必须记录实际曝光、VBLANK和FPS，不能把30fps作为所有场景的保证。
