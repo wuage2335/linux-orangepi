@@ -178,8 +178,11 @@ void run_capture_worker(const CommandLine &command,
 		EncoderConfig encoder_config;
 		encoder_config.bitrate = command.bitrate;
 		encoder_config.gop = command.gop;
+		// 由于 Mpp 要求十六行对齐, 因此需要按照 16 的倍数来计算垂直步幅
 		encoder_config.ver_stride = command.use_dmabuf ? kHeight : kVerStride;
-
+		// 选择v4l2的内存模式
+		// mmp only模式: v4l2驱动缓存去->mmap到cpu->cpu memcpy到mpp内部缓存区->mpp编码
+		// dmabuf模式: v4l2驱动缓存去->VIDIOC_EXPBUFF 导出dma-buff fd->mpp import 同一块缓冲区——>mpp 直接读取
 		const V4L2MemoryMode memory_mode = command.use_dmabuf ?
 			V4L2MemoryMode::DmaBufExport : V4L2MemoryMode::MmapOnly;
 		/* V4L2Capture 从 RKISP 取出 NV12 帧，并负责归还采集缓冲区。 */
@@ -290,6 +293,7 @@ int main(int argc, char **argv)
 		GstRtspServerSink sink(rtsp_config);
 		// 跨线程对象, 用于停止worker线程
 		std::atomic<bool> worker_stop{false};
+		// 跨线程对象, 用于将worker线程的统计结果和异常信息传递给主线程
 		WorkerResult result;
 		std::thread worker(run_capture_worker,
 				   std::cref(command),
@@ -298,6 +302,8 @@ int main(int argc, char **argv)
 				   std::ref(result));
 
 		try {
+			// 如果不在外层套一层try, 如果异常会导致代码直接离开作用域
+			// 因此在这边套一层try, 如果异常发生, 先设置worker_stop为true, 然后join线程, 再抛出异常
 			sink.run();
 		} catch (...) {
 			worker_stop.store(true, std::memory_order_relaxed);

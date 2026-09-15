@@ -2,6 +2,8 @@
 
 本目录用于让新的 Codex 对话在 `linux-orangepi` 仓库内直接恢复项目上下文，不依赖 Windows 本地工作区或旧聊天记录。
 
+项目记忆与文档冲突说明见 [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md)（2026-09-14 整理）。
+
 ## 推荐阅读顺序
 
 1. [`HANDOFF.md`](HANDOFF.md)：当前状态、环境、已验证事实、阻塞项和下一步。
