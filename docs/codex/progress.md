@@ -1,5 +1,13 @@
 # linux-orangepi 阅读进度
 
+## 2026-09-16 DDR读写测试
+
+- 完成CPU3/CPU7的64MiB顺序读写复制、CPU7的256MiB组和CPU4–7并发三轮。
+- 63组数据校验通过，公开tinymembench交叉检查正常完成；无新增内核日志。
+- 结果保存于ddr_cpu_bandwidth_validation.md，复现工具位于benchmarks/ddr/。
+- CPU0 TASKLET高负载在实验前后持续存在，尚未归因；未将本次CPU有效带宽当作
+  全SoC DDR物理流量。后续应单独定位后台软中断异常。
+
 ## 2026-09-16 DFI修复后回归
 
 - 用户安装opi5pro-dfi-clocks并重启；确认活动DT时钟属性、dmc注册和Image指纹。

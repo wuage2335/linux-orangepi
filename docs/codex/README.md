@@ -1,5 +1,7 @@
 # RK3588 Camera 项目 Codex 文档入口
 
+2026-09-16补充：[DDR读写基准与测量边界](ddr_cpu_bandwidth_validation.md)。
+
 本目录用于让新的 Codex 对话在 `linux-orangepi` 仓库内直接恢复项目上下文，不依赖 Windows 本地工作区或旧聊天记录。
 
 项目记忆与文档冲突说明见 [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md)（2026-09-14 整理）。
