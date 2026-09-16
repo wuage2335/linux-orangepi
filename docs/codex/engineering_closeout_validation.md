@@ -1,5 +1,10 @@
 # 2026-09-15 Camera 工程收口验证
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 2026-09-16：DFI修复后短回归通过
 
 用户已安装`opi5pro-dfi-clocks` overlay并重启，启动备份为

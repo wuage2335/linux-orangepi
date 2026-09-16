@@ -1,5 +1,10 @@
 # Orange Pi 5 Ultra 内核功能阅读指南
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文是平台阅读参考，当前Camera实机使用Orange Pi 5 Pro。
+> 最新入口：[Camera 当前状态](codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 这份文档配合 [Orange Pi 5 Ultra 内核功能分类地图](./orangepi5-ultra-kernel-feature-map.md) 使用。功能地图回答“有什么、在哪里”，本文回答“这些功能做什么、从哪里开始看、沿什么链路看、会遇到什么数据结构”。
 
 建议先记住一条主线：

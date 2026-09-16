@@ -1,5 +1,10 @@
 # Stage 6 RKAIQ/3A 接入验证记录
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 1. 目标与边界
 
 目标是为 Orange Pi 5 Pro 的 OV13850 CAM2 接入 RKAIQ，使 RKISP 获得 AE、AWB、

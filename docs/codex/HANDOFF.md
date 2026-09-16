@@ -1,5 +1,10 @@
 # RK3588 摄像头链路任务交接文档
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 2026-09-16 DDR读写基准补充
 
 - CPU有效内存带宽已测：大核64MiB读/写/复制中位数18.371/27.271/12.540GB/s；
@@ -112,7 +117,7 @@
   约1.63-3.17ms，以及copy路径约1.82ms；推荐DMA-BUF并在无需变换时绕过RGA。
 - 当前板端 `/boot/Image` SHA256：
   `e5312723b9192fdb59fcf60b6770490e149888f8ec44d002cbde0ee5699d0f19`。
-- 当前本地 `main` 已合并 Stage 6；开发分支为 `codex/stage6-rkaiq-3a`。阶段 2
+- 当前本地`main`已合并阶段0–6、工程收口及DDR测试。阶段2
   学习驱动源码提交为
   `592d4171c feat(ov13850): complete stage 2 learning driver`。验证文档提交见最新
   `git log`；继续前始终重新读取 `git status -sb`。
@@ -156,8 +161,8 @@
 
 ## 3. 环境与路径
 
-- Docker 实际工作树：`linux-orangepi-dev:/workspace/linux-orangepi`。
-- WSL 发行版：`Ubuntu-22.04`；源码历史路径：`/home/wuage2335/linux-orangepi`。
+- 当前WSL工作树：`Ubuntu-22.04:/home/wuage2335/linux-orangepi`。
+- 历史Docker工作树：`linux-orangepi-dev:/workspace/linux-orangepi`，使用前重新核对。
 - 交叉编译前缀：`aarch64-linux-gnu-`。
 - 基线输出目录：`out/orangepi5pro-livecfg-baseline`。
 - 学习模块输出目录：`out/orangepi5pro-2a-learning`。
@@ -255,7 +260,7 @@
    fault。启动时 VENC regulator/devfreq 告警不阻塞编码，保留为频率管理观察项。
 8. Raw Annex-B 的 FFmpeg输入FPS可能显示25；阶段5必须由RTP/容器PTS明确30fps。
 
-阶段 4 完成。当前进入阶段 5：RTP/RTSP 低延迟视频流。
+2026-08-25阶段记录：当时阶段4完成并进入阶段5；目前阶段0–6均已验收。
 
 ## 8. 文档维护
 

@@ -1,5 +1,10 @@
 # 10. 实时时序、实测结果和测量方法
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 10.1 先区分四种“时间”
 
 | 类型 | 例子 | 能否直接相加 |
@@ -120,7 +125,8 @@ RKISP SOF 到 output done 使用 `/proc/rkisp1-vir0` 数据；用户态与 V4L2 
 - 30 fps 给出约 33.33 ms/帧的稳态节拍。
 - DMA-BUF post-DQ 约 5.2 ms，明显小于帧周期，4 个 V4L2 buffer 有足够余量。
 - 网络队列不允许无界积累，宁愿丢旧 packet 并请求 IDR。
-- RKAIQ 在无 `CAP_SYS_NICE` 时回退 `SCHED_OTHER`，实测仍能保持 30.04 fps。
+- RKAIQ 在无 `CAP_SYS_NICE` 时回退 `SCHED_OTHER`，固定彩条测试为30.04fps；
+  实景AE会改变VTS，9月30分钟测试为24.76fps。
 - 主链不需要 RGA 时必须绕过，否则凭空增加约 2.7-2.9 ms 及 DDR 读写。
 
 ## 10.11 面试中可以准确说的数据
@@ -133,6 +139,7 @@ RKISP SOF 到 output done 使用 `/proc/rkisp1-vir0` 数据；用户态与 V4L2 
 - RKISP 内部 BLC/demosaic/CCM/Gamma 每个 block 的独立微秒耗时。
 - Wi-Fi 空口、Windows socket、jitter、D3D11 decode 的同轮统一时钟子段数据。
 - 开 3A 的正常实景精确同屏延迟增量。
-- 同轮 DDR 硬件计数器带宽和温度对照。
+- 全通道DDR物理读写MB/s和严格受控的热功耗增量。已有同轮SoC温度、DMC利用率
+  与CPU有效内存带宽，三种指标应分别引用，不能互相替代。
 
 这些项目可以说“当前没有可分离的实测证据”，然后说明需要什么时间戳/硬件 trace 才能测。这比猫测更专业。

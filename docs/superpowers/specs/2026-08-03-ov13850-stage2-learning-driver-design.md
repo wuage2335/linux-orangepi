@@ -1,5 +1,10 @@
 # OV13850 Learning Driver Stage 2 Design
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 **Status:** Design sections approved; document pending user review before implementation.
 
 **Goal:** Complete the learning implementation in

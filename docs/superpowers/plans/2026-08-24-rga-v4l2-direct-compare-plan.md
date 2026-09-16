@@ -1,5 +1,10 @@
 # V4L2 Direct-MMAP RGA Comparison Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans inline. Do not dispatch subagents.
 
 **Goal:** 为现有实时 RGA 程序增加向后兼容的 `--direct` 模式、统一进程 CPU 统计，并完成 bypass/copy/direct 三路径板端对比。

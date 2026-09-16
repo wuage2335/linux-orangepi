@@ -1,5 +1,10 @@
 # 6. 分层调试手册与已知风险
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 6.1 调试总原则
 
 不要看到“没画面”就直接改 Sensor 寄存器。按数据流顺序找到第一个异常层：

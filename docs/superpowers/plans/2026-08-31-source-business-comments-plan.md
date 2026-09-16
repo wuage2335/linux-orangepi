@@ -1,5 +1,10 @@
 # C/C++ Source Business Comments Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Do not use subagents for this project because the user explicitly requested inline execution.
 
 **Goal:** Add beginner-friendly Chinese business comments to the 12 project-owned non-test `.c` and `.cpp` files without changing executable behavior.

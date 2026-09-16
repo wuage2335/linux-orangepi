@@ -1,5 +1,10 @@
 # RK3588 摄像头低延迟链路项目计划
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 项目目标
 
 在 RK3588 平台上完成一条可复现、可测量、可演示的摄像头链路：
@@ -99,8 +104,8 @@ control event 订阅。详细证据见 `HANDOFF.md` 和 `progress.md`。
   并降低 RSS，但总 CPU/RGA 耗时存在波动，不声称每轮必然更快。
 - [x] 输出、runtime PM 和 CIF/ISP/RGA/MMU/IOMMU fault 检查通过。
 
-当前业务只需要 resize；旋转和色彩转换不作为无需求功能实现。DMA-BUF 留到
-后续低延迟优化。详细证据见 `rga_nv12_file_resize_validation.md`、
+当前业务只需要 resize；旋转和色彩转换不作为无需求功能实现。V4L2→MPP的DMA-BUF
+已在阶段4完成，RGA输出DMA-BUF接MPP仍未集成。详细证据见 `rga_nv12_file_resize_validation.md`、
 `rga_v4l2_live_validation.md` 和 `rga_v4l2_direct_comparison_validation.md`。
 
 ## 阶段 4：MPP 硬件编码（已完成）
@@ -172,8 +177,8 @@ queue2、MTU1200、DMA-BUF和GStreamer 30ms接收缓存。手机播放由用户�
 
 任务：
 
-- [x] 记录端到端延迟、FPS、丢帧、码率、CPU和内存；DDR带宽与温度未形成
-  同一轮可复现实测，作为非阻塞测量缺口保留。
+- [x] 记录历史端到端延迟、FPS、丢帧、码率、CPU和内存；9月已补齐同轮温度、
+  DMC利用率和CPU有效内存带宽，精确3A同屏时延及全通道物理DDR MB/s仍未测。
 - [x] 对比拷贝、DMA-BUF以及启用/绕过RGA路径。
 - [x] 执行持续推流、反复启停、网络抖动和异常断开测试。
 - [x] 整理常见故障的分层定位方法。
@@ -185,7 +190,8 @@ queue2、MTU1200、DMA-BUF和GStreamer 30ms接收缓存。手机播放由用户�
 - [x] 用四种 sensor test pattern 完成确定性亮/中/暗代理测试和3A开关性能对比。
 - [x] 在明亮、普通、较暗三种实景验证 AE/AWB、亮度与色偏。
 - [x] 完成3A延迟影响评估：Stage 5同屏基线平均72ms、最大160ms且无单调漂移；
-  3A开/关均保持30.04fps和0 drop/overrun。正常实景的3A同屏精确毫秒值未补录，
+  固定彩条条件下3A开/关均保持30.04fps和0 drop/overrun；低照度AE可能降低帧率。
+  正常实景的3A同屏精确毫秒值未补录，
   明确作为非阻塞残余，不虚构测量值。
 
 完成标准：形成稳定性测试结果和性能对比数据，并能指出当前主要延迟与带宽瓶颈。
@@ -197,9 +203,9 @@ AE/AWB 算法执行和 PM 已通过。暗场 AE 在 1 秒内将 exposure/gain �
 Stage 6收口记录（2026-08-30）：RTSP长会话21,561帧、717.58秒、30.05fps、
 0 timeout/drop；copy与DMA-BUF、RGA bypass/copy/direct、3A开/关均已量化。
 当前主要开销分别是接收缓存/显示刷新、必要的帧周期，以及可选RGA的约
-1.63-3.17ms和copy路径约1.82ms；DMA-BUF已移除该copy，3A未造成帧率或队列
-回归。DDR带宽、温度以及3A正常实景精确同屏毫秒值没有同轮证据，列为后续
-可选补测，不阻塞阶段关闭。
+1.63-3.17ms和copy路径约1.82ms；DMA-BUF已移除该copy。上述3A帧率结论仅适用于
+当时条件；后续实景已观察到AE延长VTS。9月补测结果见CURRENT_STATUS.md，
+温度、DMC利用率及CPU有效带宽已有数据，物理总线MB/s和3A同屏时延仍未补齐。
 
 ## 阶段 7：AI 感知与业务扩展（可选）
 
@@ -217,7 +223,7 @@ Stage 6收口记录（2026-08-30）：RTSP长会话21,561帧、717.58秒、30.05
 
 - 后续所有阶段按学习陪练模式推进，不默认由 Codex 直接完成实现。
 - 阶段 0-6 已完成；阶段 7 AI 感知与业务扩展为可选下一阶段。
-- 正式 `ov13850.c` 作为主学习和交付驱动，`ov13850_i2c_min.c` 仅用于寄存器验证与故障定位。
+- `ov13850_i2c_min.c` 是已验收的完整学习驱动，正式 `ov13850.c` 作为参考；保持binding隔离。
 - 第一版固定为 `1080p30 + H.264 + RTP/RTSP`，链路稳定后再提高分辨率或接入 AI。
 - RGA 是按需节点，不需要缩放、旋转或格式转换时直接绕过。
 - 阶段 3 对比结论：bypass 资源最低；Direct 消除显式 copy，但是否降低总 CPU

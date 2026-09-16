@@ -1,5 +1,10 @@
 # RK3588 Camera Pipeline Stage Timing Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 **Goal:** Build, deploy, and run a reproducible per-stage latency benchmark.
 
 ## Tasks

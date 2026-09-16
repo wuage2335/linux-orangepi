@@ -1,5 +1,10 @@
 # V4L2 Real-Time RGA Copy Path Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Do not dispatch subagents; the user requires inline execution.
 
 **Goal:** 构建一个在 Orange Pi 5 Pro 上从 RKISP mainpath 连续取得 300 帧 1920x1080 NV12，经显式 memcpy 后使用 RGA 缩放为 1280x720 NV12 的实时实验。

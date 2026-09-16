@@ -1,5 +1,10 @@
 # linux-orangepi 阅读发现
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 2026-08-28 RKAIQ/3A 接入边界
 
 - 当前 IQ 文件、学习驱动和 2022 RKAIQ 不属于同一 ABI/JSON 世代。直接运行依次
@@ -28,7 +33,16 @@
   反而约600ms，因此VLC不能承担本项目的延迟验收。
 - 手机播放由用户明确移为可选项，不阻塞阶段5完成。
 
-## 项目定位
+## 2026-09-16 最新发现汇总
+
+- 工程收口、DFI重启后短回归与CPU有效内存带宽测试均已完成，阶段0–6已有验收。
+- 活动学习驱动已完成Controls/PM/双模式，旧8月6日脚手架结论仅为历史记录。
+- DFI旧DT遗漏四路时钟，用户部署最小overlay后dmc注册和调频恢复。
+- CPU0 TASKLET高负载仍待定位；DDR基准避开CPU0但并非无干扰系统峰值。
+- 精确3A同屏延迟已按用户选择暂缓；全DDR物理读写MB/s没有直接计数。
+- 扩展方向尚未选定，不能把RKNN/WebRTC/ROS2/Rust/语义检索写成已实现能力。
+
+## 项目定位（历史阅读记录）
 
 - 目标项目名：`linux-orangepi`。
 - Linux 内部路径：`/home/wuage2335/linux-orangepi`。

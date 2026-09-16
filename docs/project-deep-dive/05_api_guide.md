@@ -1,5 +1,10 @@
 # 5. 核心类、结构与函数导读
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 5.1 内核模块：`struct ov13850_min`
 
 **文件**：`drivers/media/i2c/ov13850_i2c_min.c`

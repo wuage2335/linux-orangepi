@@ -1,5 +1,10 @@
 # RK3588 MPP Hardware Encoding Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans inline. Do not dispatch subagents.
 
 **Goal:** 在 Orange Pi 5 Pro 上建立可复现的官方 MPP 1.1.0 环境，完成 1080p30 H.264/H.265 文件与实时硬件编码，并验证参数、码流、所有权和 DMA-BUF 可行性。

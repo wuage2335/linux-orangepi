@@ -1,5 +1,10 @@
 # C/C++ 源文件零基础业务注释设计
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 1. 目标
 
 为 Orange Pi 5 Pro + OV13850 摄像头项目中由项目成员新增或重点修改的非测试

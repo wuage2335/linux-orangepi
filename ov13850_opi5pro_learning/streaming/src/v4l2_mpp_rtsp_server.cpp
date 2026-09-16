@@ -186,6 +186,7 @@ void run_capture_worker(const CommandLine &command,
 		const V4L2MemoryMode memory_mode = command.use_dmabuf ?
 			V4L2MemoryMode::DmaBufExport : V4L2MemoryMode::MmapOnly;
 		/* V4L2Capture 从 RKISP 取出 NV12 帧，并负责归还采集缓冲区。 */
+		// 构造 V4L2Capture 对象时, 传入的 memory_mode 决定了使用哪种内存模式
 		V4L2Capture capture(command.device.c_str(), memory_mode);
 		/* MppEncoder 将 NV12 图像编码为供 RTSP 服务发送的 H.264 码流。 */
 		MppEncoder encoder(encoder_config);

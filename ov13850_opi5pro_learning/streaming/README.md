@@ -1,5 +1,10 @@
 # Orange Pi 5 Pro Low-Latency Streaming
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../../docs/codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 工程收口入口（2026-09-15）
 
 WSL安装GStreamer/RTSP开发包后，使用固定MPP源码做主机编译：
@@ -204,7 +209,7 @@ Windows GStreamer：
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\streaming\scripts\receive_h264_rtsp.ps1 `
-  -Uri rtsp://192.168.1.10:8554/live -LatencyMs 30 -Decoder software
+  -Uri rtsp://192.168.1.16:8554/live -LatencyMs 30 -Decoder software
 ```
 
 服务端始终保持一套V4L2/MPP链路。新客户端到来时补发SPS/PPS并请求IDR；无客户端

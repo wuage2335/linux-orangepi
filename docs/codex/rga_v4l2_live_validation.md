@@ -1,5 +1,10 @@
 # V4L2 Real-Time RGA Copy Path Validation
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 日期：2026-08-24
 
 ## 1. 验证范围

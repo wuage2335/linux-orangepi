@@ -1,5 +1,10 @@
 # Orange Pi 5 Pro + OV13850 摄像头项目面试讲述文档
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 1. 项目一句话定位
 
 基于 Orange Pi 5 Pro（RK3588S）和 OV13850 MIPI 摄像头，完成从 Linux Sensor
@@ -200,7 +205,7 @@ RAW10 经过 MIPI、CIF 和 RKISP 输出 NV12，再按需经过 RGA，使用 MPP
 | --- | --- | --- |
 | AE 会通过 VBLANK 降低帧率 | normal VBLANK451，dark VBLANK1449；暗场约16.57 fps，编码端不能继续假设固定30fps | 限制最大曝光/VTS，优先增益或启用低照模式；编码和RTP时间戳读取实际帧时间 |
 | RGA direct-MMAP 不是真正端到端零拷贝 | Direct路径消除显式memcpy，但RGA仍基于映射地址；性能有调度波动 | 建立V4L2 DMABUF->RGA import->MPP DMABUF的统一buffer pool与fence同步 |
-| 长稳测试时长仍有限 | 已完成分钟级和约717秒RTSP测试，但没有24小时3A+编码+网络soak | 增加24小时测试、内存/RSS趋势、温度、DDR带宽、丢帧和自动恢复统计 |
+| 长稳测试时长仍有限 | 已补充600秒固定曝光及1800秒3A实景测试，但没有24小时soak | 如业务需要，再增加24小时测试和恢复统计；现有温度、DMC与CPU带宽结果按条件引用 |
 | 网络弱化和故障注入不足 | 已测断开重连和不同jitter，但缺少可控丢包/乱序/带宽压缩 | 使用`tc netem`构造丢包、时延、乱序；验证丢旧帧、IDR恢复和延迟上界 |
 | MPP/RTSP指标缺少统一时间线 | 各模块已有局部耗时，但端到端分段延迟未统一 | 为DQBUF、RGA、MPP输入/输出、RTP发送、客户端显示统一采集monotonic timestamp |
 
@@ -240,7 +245,7 @@ runtime PM、内核 fault、SHA 和长时间趋势；修改系统文件前保留
 
 ## 8. 待补充材料
 
-- 3A 开启后 normal 场景的同屏端到端延迟，至少 5 组并给出平均值/P95；
+- 3A开启后normal场景的同屏端到端延迟，多组样本报告中位数与范围，充分采样后再估计P95；
 - 一段同时展示 bright/normal/dark 自动收敛和 RTSP 播放的演示视频；
 - 24 小时 3A + MPP + RTSP soak 的温度、RSS、丢帧和恢复记录；
 - 使用灰卡/ColorChecker/多色温灯源的正式 IQ 标定报告；

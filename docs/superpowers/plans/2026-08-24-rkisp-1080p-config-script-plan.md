@@ -1,5 +1,10 @@
 # RKISP 1080p Configuration Script Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. The user explicitly requested no subagents, so execution stays inline.
 
 **Goal:** Build and verify an idempotent Bash script that discovers the Orange Pi 5 Pro camera nodes by sysfs name and configures the validated 2112x1568 RAW10 -> centered crop -> 1920x1080 NV12 RKISP pipeline.

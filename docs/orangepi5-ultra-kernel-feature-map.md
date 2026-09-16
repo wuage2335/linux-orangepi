@@ -1,5 +1,10 @@
 # Orange Pi 5 Ultra 内核功能分类地图
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文是平台阅读参考，当前Camera实机使用Orange Pi 5 Pro。
+> 最新入口：[Camera 当前状态](codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 本文按功能分类整理当前 Linux/Rockchip 内核源码中与 Orange Pi 5 Ultra 制作相关的主要内容。每个功能项下方列出相对路径，便于在仓库中直接跳转。
 
 说明：
@@ -836,11 +841,11 @@
 
 - **内核镜像**
 
-  - [arch/arm64/boot/Image](../arch/arm64/boot/Image)
+  - `arch/arm64/boot/Image`（构建产物；独立O=构建时位于输出目录）
 
 - **主 DTB**
 
-  - [arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-ultra.dtb](../arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-ultra.dtb)
+  - `arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-ultra.dtb`（构建生成的Ultra参考DTB）
 
 - **可选 DTBO**
 

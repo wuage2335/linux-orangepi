@@ -1,5 +1,10 @@
 # 1. 项目概览
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 1.1 项目解决什么问题
 
 项目的目标是在 Orange Pi 5 Pro（RK3588S）上把 OV13850 CAM2 从“一颗可以通过 I2C 访问的 Sensor”变成“可稳定采集、自动曝光/白平衡、硬件编码并通过局域网低延迟显示的完整影像系统”。
@@ -99,5 +104,6 @@ RKAIQ 算法源码由构建脚本固定上游提交后放在忽略的 `build/` �
 
 - RKNPU AI 感知分支、OSD、跟踪/云台控制。
   evidence: `docs/codex/task_plan.md:阶段 7`
-- 手机端播放、同轮 DDR 带宽/温度实测、正常实景 3A 精确同屏延迟。
+- 手机端播放、全通道DDR物理读写MB/s、正常实景3A精确同屏延迟。温度、DMC利用率
+  和CPU有效内存带宽已补测，见当前状态入口；CPU0 TASKLET干扰仍待定位。
   evidence: `docs/codex/task_plan.md:阶段 6`

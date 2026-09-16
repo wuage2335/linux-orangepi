@@ -1,5 +1,10 @@
 # RK3588 Stage 5 Low-Latency Streaming Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. The user explicitly requested no subagents. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a reproducible 1920x1080@30 low-latency pipeline from OV13850/RKISP through V4L2 DMA-BUF and Rockchip MPP H.264 into RTP/UDP and RTSP, with Windows GStreamer playback and measured end-to-end latency no greater than 200 ms.

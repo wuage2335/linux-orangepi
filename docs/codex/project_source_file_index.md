@@ -1,5 +1,10 @@
 # 摄像头学习项目源文件索引
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 本文只索引项目新增或重点修改的源文件，便于按执行链路阅读；不重复罗列验证文档、
 截图、编译产物和第三方头文件。
 
@@ -72,7 +77,18 @@
 - `ov13850_opi5pro_learning/benchmarks/scripts/run_pipeline_timing_matrix.sh`：执行
   copy、DMA-BUF、RTP与RGA五轮固定矩阵。
 
-## 推荐阅读顺序
+## 2026-09 工程化与DDR实验入口
+
+- `ov13850_opi5pro_learning/streaming/scripts/build_host.sh`、`build_board.sh`：架构隔离构建与测试。
+- `streaming/scripts/camera_session.py`（位于学习工程内）：统一3A/ISP/RTSP会话、日志、
+  定时回归、解码停滞检查与进程组回收。
+- `streaming/scripts/install_mpp_runtime.py`：同文件系统原子发布运行库，避免截断运行中映射。
+- `streaming/scripts/run_board_regression.sh`、`package_closeout.sh`、`summarize_session.py`：
+  功能矩阵、源码部署包与CPU/RSS/温度摘要。
+- `ov13850_opi5pro_learning/benchmarks/ddr/`：CPU有效内存读写、并发测试及分析。
+- `docs/codex/diagnostics/`：本板DFI时钟修复与带哈希/备份保护的部署辅助脚本。
+
+## 推荐源码阅读路线
 
 ```text
 ov13850_i2c_min.c

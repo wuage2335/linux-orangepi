@@ -1,5 +1,10 @@
 # Orange Pi 5 Pro RK MPP Learning Project
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../../docs/codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 本目录用于阶段 4 RK MPP 硬件编码学习，固定官方 MPP 1.1.0，并提供文件、实时
 copy 和实时 DMA-BUF 三条路径。
 

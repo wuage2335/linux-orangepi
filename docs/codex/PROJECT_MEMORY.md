@@ -1,5 +1,10 @@
 # RK3588 / OV13850 项目记忆
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 2026-09-16 重启后更新
 
 用户已部署DFI时钟overlay并重启，dmc节点和负载采样恢复。完整功能矩阵通过，

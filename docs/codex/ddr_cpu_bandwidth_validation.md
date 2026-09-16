@@ -1,5 +1,10 @@
 # 2026-09-16 DDR读写基准
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 结论与范围
 
 本轮完成CPU访问内存的顺序读、写、复制及四大核并发吞吐测试，得到实际payload

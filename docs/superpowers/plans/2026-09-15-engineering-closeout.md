@@ -1,5 +1,10 @@
 # Camera 工程收口实施计划
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 Goal: 恢复完整构建、统一会话管理、执行真实回归并把证据写回交接入口。
 
 Architecture: 保留现有 V4L2/MPP/GStreamer C++ 管线；增加 Python 标准库会话管理器，统一启动/停止与证据保存。WSL host SDK 与 aarch64 SDK 独立；板端部署在带日期 release 目录。

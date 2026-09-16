@@ -1,5 +1,10 @@
 # RGA NV12 File Resize Experiment Implementation Plan
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 最新入口：[Camera 当前状态](../../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Do not dispatch subagents; the user requires inline mentoring and review checkpoints.
 
 **Goal:** 引入固定版本的 Rockchip 官方 librga，并构建一个在 Orange Pi 5 Pro 上把 1920x1080 NV12 文件缩放为 1280x720 NV12 的最小硬件实验。

@@ -1,5 +1,10 @@
 # 7. 源码地图与最佳阅读路线
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 7.1 先看“自研小项目”，不要从 Linux 顶层目录开始
 
 `linux-orangepi` 是完整 Linux 内核树，但学习主线只集中在：

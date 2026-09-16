@@ -1,5 +1,10 @@
 # Orange Pi 5 Pro 内核问题与修复记录
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../docs/codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 > 适用项目：`linux-orangepi/ov13850_opi5pro_learning`
 > 板卡：Orange Pi 5 Pro（RK3588S）
 > 文档用途：持续记录内核构建、部署、启动、模块和摄像头 bring-up 中遇到的问题、证据、修复方法与验证结果。

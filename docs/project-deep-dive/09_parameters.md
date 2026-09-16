@@ -1,5 +1,10 @@
 # 9. 配置、宏、设备树和调参入口
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 9.1 Sensor 常量与寄存器
 
 | 参数 | 当前值 | 作用 | 修改风险 |

@@ -1,5 +1,10 @@
 # RK3588 Camera 项目 Codex 文档入口
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 2026-09-16补充：[DDR读写基准与测量边界](ddr_cpu_bandwidth_validation.md)。
 
 本目录用于让新的 Codex 对话在 `linux-orangepi` 仓库内直接恢复项目上下文，不依赖 Windows 本地工作区或旧聊天记录。

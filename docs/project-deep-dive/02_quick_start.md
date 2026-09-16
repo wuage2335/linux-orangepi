@@ -1,5 +1,10 @@
 # 2. 快速运行与验收
 
+<!-- camera-status-navigation -->
+> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 最新入口：[Camera 当前状态](../codex/CURRENT_STATUS.md)。
+<!-- /camera-status-navigation -->
+
 ## 2.1 环境
 
 | 项目 | 当前验证基线 |
@@ -29,10 +34,12 @@ cd ~/linux-orangepi
 OUT="$PWD/out/orangepi5pro-livecfg-baseline"
 
 make O="$OUT" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-  drivers/media/i2c/ov13850_i2c_min.ko
+  drivers/media/i2c/ov13850_i2c_min.o
 ```
 
-Kconfig 入口为 `CONFIG_VIDEO_OV13850_I2C_MIN`，Kbuild 将其生成 `ov13850_i2c_min.ko`。实机加载前必须检查 `vermagic` 与 `uname -r` 相同，并且 alias 不得抢占正式 `ovti,ov13850`。
+此处仅检查驱动对象编译。活动基线要求`CONFIG_VIDEO_OV13850_I2C_MIN=y`并内建到
+Image；历史上模块晚加载会错过CIF/ISP组图窗口。不要把`.ko`单独编译成功视为
+媒体图验收，学习binding也不得抢占正式`ovti,ov13850`。
 
 ### RGA
 
@@ -50,6 +57,17 @@ make -C ov13850_opi5pro_learning/mpp bundle
 
 ### RTP/RTSP
 
+WSL主机与板端采用不同架构的MPP SDK。优先使用已验证的一键入口：
+
+```bash
+# WSL源码根目录，要求固定MPP源码已存在
+bash ov13850_opi5pro_learning/streaming/scripts/build_host.sh
+# 板端解压后的学习工程目录
+bash streaming/scripts/build_board.sh
+```
+
+下面的make示例适用于已经配好目标架构SDK的环境：
+
 ```bash
 make -C ov13850_opi5pro_learning/streaming rtp
 make -C ov13850_opi5pro_learning/streaming rtsp
@@ -63,6 +81,16 @@ make -C ov13850_opi5pro_learning/benchmarks test
 ```
 
 ## 2.4 板端最小运行路径
+
+带3A的推荐一键路径（当前release布局）：
+
+```bash
+cd ~/ov13850_opi5pro_learning/release/closeout-20260915/ov13850_opi5pro_learning
+python3 streaming/scripts/camera_session.py --output ./evidence/live-new
+```
+
+默认使用已部署的runtime-v15，自动启动3A、配置ISP和RTSP；Ctrl+C清理本次进程。
+下文手动流程用于分层调试，单独启动RTSP不会自动启动RKAIQ。
 
 ### 1. 确认活动驱动
 
