@@ -190,11 +190,16 @@ void run_capture_worker(const CommandLine &command,
 		V4L2Capture capture(command.device.c_str(), memory_mode);
 		/* MppEncoder 将 NV12 图像编码为供 RTSP 服务发送的 H.264 码流。 */
 		MppEncoder encoder(encoder_config);
+		// 需要先通过从mpp中取出H.264的配置头,拿到sps,pps等配置.
 		encoder.write_header(sink, result.encoder);
+		// 内部会将四个buffer通过VIDIOC_QBUF交给驱动, 然后执行VIDIOC_STREAMON
+		// 驱动开始让RKISP往buf写入NV12图像
 		capture.start();
-
+		// 丢弃前几帧, 让ISP自动曝光和白平衡稳定
 		for (unsigned int index = 0; index < kSkipFrames; ++index) {
+			// dequeue 内部使用poll等待驱动写入完毕, 然后返回一个CapturedFrame对象, 里面包含了buf的index和数据指针
 			const CapturedFrame frame = capture.dequeue(result.timeouts);
+			// requeue 内部会将buf的index通过VIDIOC_QBUF交给驱动, 让驱动继续往这个buf写入NV12图像
 			capture.requeue(frame.index);
 		}
 

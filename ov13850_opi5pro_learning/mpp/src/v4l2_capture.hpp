@@ -111,6 +111,7 @@ public:
 		pollfd descriptor = {fd_, POLLIN | POLLPRI, 0};
 		int ret;
 		do {
+			// waiting 2secs, if timeout, return -1, and increment timeouts
 			ret = poll(&descriptor, 1, kCapturePollTimeoutMs);
 		} while (ret < 0 && errno == EINTR);
 		if (ret < 0)
@@ -126,8 +127,10 @@ public:
 		buffer.memory = V4L2_MEMORY_MMAP;
 		buffer.length = VIDEO_MAX_PLANES;
 		buffer.m.planes = planes;
+		// 从驱动的完成队列中取回一块写好图像的缓冲区, 使其暂时归为用户态, 由用户态处理后再归还给驱动
 		if (v4l2_xioctl(fd_, VIDIOC_DQBUF, &buffer) < 0)
 			throw v4l2_system_error("VIDIOC_DQBUF");
+		// 进行一些基本的安全检查, 确保驱动返回的缓冲区索引和长度是合理的
 		if (buffer.index >= buffers_.size() || buffer.length < 1)
 			throw std::runtime_error("invalid V4L2 dequeued buffer");
 		if (planes[0].data_offset != 0 ||
@@ -135,20 +138,26 @@ public:
 			throw std::runtime_error("invalid V4L2 NV12 plane layout");
 
 		return {
+			// 确定是四个缓冲区中的哪一个, 以便后续 requeue
 			buffer.index,
+			// mmap后的cpu地址, 由驱动写入NV12图像, 用户态读取后再归还给驱动
 			static_cast<const unsigned char *>(buffers_[buffer.index].address),
+			// 采集时间戳
 			buffer.sequence,
 			static_cast<std::uint64_t>(buffer.timestamp.tv_sec) * 1000000000ULL +
 				static_cast<std::uint64_t>(buffer.timestamp.tv_usec) * 1000ULL,
+			// 时间戳类型
 			buffer.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK,
 		};
 	}
 
 	void requeue(unsigned int index)
 	{
+		// 将buf还给驱动, 使驱动重新写入图像
 		v4l2_plane planes[VIDEO_MAX_PLANES] = {};
 		v4l2_buffer buffer = {};
 		buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+		// 由于最开始是通过 VIDIOC_REQBUFS 请求的内存映射模式, 因此这里也必须使用 V4L2_MEMORY_MMAP
 		buffer.memory = V4L2_MEMORY_MMAP;
 		buffer.index = index;
 		buffer.length = 1;
