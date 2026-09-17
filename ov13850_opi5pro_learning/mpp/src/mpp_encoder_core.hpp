@@ -56,9 +56,9 @@ struct EncoderConfig {
 };
 
 struct EncoderStats {
-	std::uint64_t encoded_bytes = 0;
-	std::uint64_t packets = 0;
-	std::uint64_t idr_frames = 0;
+	std::uint64_t encoded_bytes = 0; // MPP总共输出的字节数
+	std::uint64_t packets = 0; // MPP 总共输出的 packet 数量
+	std::uint64_t idr_frames = 0; // 实际编码出来的IDR帧的数量
 };
 
 inline const char *codec_name(Codec codec)

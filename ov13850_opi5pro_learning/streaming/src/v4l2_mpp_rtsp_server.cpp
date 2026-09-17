@@ -52,13 +52,13 @@ struct CommandLine {
  */
 struct WorkerResult {
 	/* worker 结束后把统计和异常统一交还 main，避免跨线程直接抛异常。 */
-	EncoderStats encoder;
-	std::uint64_t frames = 0;
-	std::uint64_t dropped = 0;
-	std::uint64_t idr_requests = 0;
-	unsigned int timeouts = 0;
-	double elapsed_seconds = 0.0;
-	std::exception_ptr error;
+	EncoderStats encoder; // MPP编码统计
+	std::uint64_t frames = 0; // 正式循环中成功处理的输入帧数
+	std::uint64_t dropped = 0; // 根据V4L2 sequence 不连续推算出的采集丢帧数
+	std::uint64_t idr_requests = 0; // 因RTSP客户端连接而主动调用 request_idr() 的次数
+	unsigned int timeouts = 0; // 等待V4L2帧时 poll() 超时的次数
+	double elapsed_seconds = 0.0; // 正式采集编码循环持续时间，用来计算FPS
+	std::exception_ptr error; // 保存worker线程捕获到的异常，供主线程重新抛出
 };
 
 /**
@@ -203,14 +203,18 @@ void run_capture_worker(const CommandLine &command,
 			capture.requeue(frame.index);
 		}
 
-		std::uint32_t previous_sequence = 0;
-		bool have_previous = false;
+		std::uint32_t previous_sequence = 0; //记录上一帧驱动序号
+		bool have_previous = false; //previous_sequence 里是否已经保存了一帧有效的 V4L2 sequence。它用于避免第一帧进行无意义的丢帧比较。
 		const auto start = Clock::now();
 		int frame_index = 0;
-
+		//循环只有在两个条件都为 false 时继续：
+		// 1. 主线程没有要求停止。
+		// 2. 没有收到 Ctrl+C/SIGTERM。
 		while (!worker_stop.load(std::memory_order_relaxed) &&
 		       !signal_stop_requested.load(std::memory_order_relaxed)) {
 			/* RTSP 回调发布请求，编码线程在下一帧前串行调用 MPP control。 */
+			// 检查本帧是否需要IDR, 因为客户端可能任意时间介入, 因此需要在每一帧都检查一次,
+			// 如果需要IDR帧
 			if (sink.take_client_idr_request()) {
 				encoder.request_idr();
 				++result.idr_requests;

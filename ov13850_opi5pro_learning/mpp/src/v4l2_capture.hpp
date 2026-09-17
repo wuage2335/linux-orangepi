@@ -111,7 +111,7 @@ public:
 		pollfd descriptor = {fd_, POLLIN | POLLPRI, 0};
 		int ret;
 		do {
-			// waiting 2secs, if timeout, return -1, and increment timeouts
+			// waiting 2 secs, if timeout, return -1, and increment timeouts
 			ret = poll(&descriptor, 1, kCapturePollTimeoutMs);
 		} while (ret < 0 && errno == EINTR);
 		if (ret < 0)
