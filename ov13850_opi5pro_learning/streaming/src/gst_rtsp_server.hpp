@@ -164,7 +164,7 @@ private:
 	GstRTSPMedia *media_ = nullptr;
 	GstElement *appsrc_ = nullptr;
 	GstBus *bus_ = nullptr;
-	std::vector<std::uint8_t> codec_header_;
+	camera_mpp::EncodedPacketView codec_header_{};
 	LivePtsClock live_pts_clock_;
 	std::string fatal_error_;
 	unsigned int active_clients_ = 0;

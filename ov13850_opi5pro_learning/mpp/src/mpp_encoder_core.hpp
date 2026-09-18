@@ -5,6 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "mpp_buffer.h"
 #include "mpp_frame.h"
@@ -78,6 +79,59 @@ inline void check_mpp(MPP_RET ret, const char *operation)
 					" failed, MPP_RET=" + std::to_string(ret));
 }
 
+struct MppBufferGroupOwner {
+	~MppBufferGroupOwner()
+	{
+		if (group)
+			mpp_buffer_group_put(group);
+	}
+
+	MppBufferGroup group = nullptr;
+};
+
+struct MppPacketBufferLease {
+	MppPacketBufferLease(MppBuffer owned_buffer,
+			     std::shared_ptr<MppBufferGroupOwner> owned_group)
+		: buffer(owned_buffer), group(std::move(owned_group))
+	{
+	}
+
+	~MppPacketBufferLease()
+	{
+		if (buffer)
+			mpp_buffer_put(buffer);
+	}
+
+	MppBuffer buffer;
+	std::shared_ptr<MppBufferGroupOwner> group;
+};
+
+class ScopedMppBuffer {
+public:
+	ScopedMppBuffer(MppBufferGroup group, std::size_t size)
+	{
+		check_mpp(mpp_buffer_get(group, &buffer_, size),
+			  "mpp_buffer_get(packet)");
+	}
+
+	~ScopedMppBuffer()
+	{
+		if (buffer_)
+			mpp_buffer_put(buffer_);
+	}
+
+	ScopedMppBuffer(const ScopedMppBuffer &) = delete;
+	ScopedMppBuffer &operator=(const ScopedMppBuffer &) = delete;
+
+	MppBuffer get() const
+	{
+		return buffer_;
+	}
+
+private:
+	MppBuffer buffer_ = nullptr;
+};
+
 class MppEncoder {
 public:
 	explicit MppEncoder(const EncoderConfig &config)
@@ -123,8 +177,9 @@ public:
 	void write_header(EncodedPacketSink &sink, EncoderStats &stats)
 	{
 		/* Annex-B 裸流必须先写 SPS/PPS 或 VPS/SPS/PPS，独立解码器才能起播。 */
+		ScopedMppBuffer output_buffer(group_owner_->group, kFrameSize);
 		MppPacket packet = nullptr;
-		check_mpp(mpp_packet_init_with_buffer(&packet, packet_buffer_),
+		check_mpp(mpp_packet_init_with_buffer(&packet, output_buffer.get()),
 			  "mpp_packet_init_with_buffer(header)");
 		mpp_packet_set_length(packet, 0);
 
@@ -136,7 +191,8 @@ public:
 		}
 
 		try {
-			deliver_packet(sink, packet, stats, -1, false, true);
+			deliver_packet(sink, packet, stats, -1, false, true,
+				       group_owner_);
 		} catch (...) {
 			mpp_packet_deinit(&packet);
 			throw;
@@ -178,10 +234,11 @@ private:
 			   EncoderStats &stats)
 	{
 		/*
-		 * 每个输入帧创建一个轻量 MppFrame 描述符，并复用预分配的 packet
-		 * 缓冲区。阻塞输出模式保证返回前硬件已经消费当前输入，因此实时
-		 * DMA-BUF 路径可以在此函数返回后安全地把 V4L2 buffer 重新 QBUF。
+		 * 每个输入帧创建一个轻量 MppFrame 描述符和独立的输出buffer。阻塞
+		 * 输出模式保证返回前硬件已消费输入；输出buffer则由packet owner保持，
+		 * 直到GStreamer释放最后一个引用后才回到MPP group供后续帧复用。
 		 */
+		ScopedMppBuffer output_buffer(group_owner_->group, kFrameSize);
 		MppFrame frame = nullptr;
 		MppPacket packet = nullptr;
 		check_mpp(mpp_frame_init(&frame), "mpp_frame_init");
@@ -196,14 +253,21 @@ private:
 		mpp_frame_set_eos(frame, end_of_stream);
 		mpp_frame_set_buffer(frame, input_buffer);
 
-		check_mpp(mpp_packet_init_with_buffer(&packet, packet_buffer_),
-			  "mpp_packet_init_with_buffer(frame)");
+		MPP_RET ret = mpp_packet_init_with_buffer(&packet, output_buffer.get());
+		if (ret != MPP_OK) {
+			mpp_frame_deinit(&frame);
+			check_mpp(ret, "mpp_packet_init_with_buffer(frame)");
+		}
 		mpp_packet_set_length(packet, 0);
 		MppMeta meta = mpp_frame_get_meta(frame);
-		check_mpp(mpp_meta_set_packet(meta, KEY_OUTPUT_PACKET, packet),
-			  "mpp_meta_set_packet");
+		ret = mpp_meta_set_packet(meta, KEY_OUTPUT_PACKET, packet);
+		if (ret != MPP_OK) {
+			mpp_frame_deinit(&frame);
+			mpp_packet_deinit(&packet);
+			check_mpp(ret, "mpp_meta_set_packet");
+		}
 
-		MPP_RET ret = mpi_->encode_put_frame(ctx_, frame);
+		ret = mpi_->encode_put_frame(ctx_, frame);
 		mpp_frame_deinit(&frame);
 		if (ret != MPP_OK) {
 			mpp_packet_deinit(&packet);
@@ -229,7 +293,7 @@ private:
 		try {
 			deliver_packet(sink, packet, stats,
 				       static_cast<std::int64_t>(index) * 1000000 / kFps,
-				       is_intra, false);
+				       is_intra, false, group_owner_);
 			++stats.packets;
 		} catch (...) {
 			mpp_packet_deinit(&packet);
@@ -270,7 +334,8 @@ private:
 				   EncoderStats &stats,
 				   std::int64_t pts_us,
 				   bool keyframe,
-				   bool codec_config)
+				   bool codec_config,
+				   const std::shared_ptr<MppBufferGroupOwner> &group_owner)
 	{
 		const std::size_t length = mpp_packet_get_length(packet);
 		if (!length)
@@ -279,6 +344,20 @@ private:
 		void *position = mpp_packet_get_pos(packet);
 		if (!position)
 			throw std::runtime_error("packet has no data pointer");
+		MppBuffer packet_buffer = mpp_packet_get_buffer(packet);
+		if (!packet_buffer)
+			throw std::runtime_error("packet has no MPP buffer");
+		check_mpp(mpp_buffer_inc_ref(packet_buffer),
+			  "mpp_buffer_inc_ref(packet)");
+
+		std::shared_ptr<MppPacketBufferLease> lease;
+		try {
+			lease = std::make_shared<MppPacketBufferLease>(packet_buffer,
+								group_owner);
+		} catch (...) {
+			mpp_buffer_put(packet_buffer);
+			throw;
+		}
 
 		const EncodedPacketView view = {
 			reinterpret_cast<const std::uint8_t *>(position),
@@ -287,6 +366,7 @@ private:
 			keyframe,
 			codec_config,
 			static_cast<bool>(mpp_packet_get_eos(packet)),
+			lease,
 		};
 		sink.consume(view);
 		stats.encoded_bytes += length;
@@ -356,12 +436,12 @@ private:
 		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_HEADER_MODE, &header_mode),
 			  "MPP_ENC_SET_HEADER_MODE");
 
-		check_mpp(mpp_buffer_group_get_internal(&group_, MPP_BUFFER_TYPE_DRM),
+		group_owner_ = std::make_shared<MppBufferGroupOwner>();
+		check_mpp(mpp_buffer_group_get_internal(&group_owner_->group,
+						MPP_BUFFER_TYPE_DRM),
 			  "mpp_buffer_group_get_internal");
-		check_mpp(mpp_buffer_get(group_, &frame_buffer_, kFrameSize),
+		check_mpp(mpp_buffer_get(group_owner_->group, &frame_buffer_, kFrameSize),
 			  "mpp_buffer_get(frame)");
-		check_mpp(mpp_buffer_get(group_, &packet_buffer_, kFrameSize),
-			  "mpp_buffer_get(packet)");
 	}
 
 	void set_s32(const char *name, RK_S32 value)
@@ -373,14 +453,8 @@ private:
 	{
 		if (frame_buffer_)
 			mpp_buffer_put(frame_buffer_);
-		if (packet_buffer_)
-			mpp_buffer_put(packet_buffer_);
 		frame_buffer_ = nullptr;
-		packet_buffer_ = nullptr;
-
-		if (group_)
-			mpp_buffer_group_put(group_);
-		group_ = nullptr;
+		group_owner_.reset();
 
 		if (cfg_)
 			mpp_enc_cfg_deinit(cfg_);
@@ -399,9 +473,8 @@ private:
 	MppCtx ctx_ = nullptr;
 	MppApi *mpi_ = nullptr;
 	MppEncCfg cfg_ = nullptr;
-	MppBufferGroup group_ = nullptr;
+	std::shared_ptr<MppBufferGroupOwner> group_owner_;
 	MppBuffer frame_buffer_ = nullptr;
-	MppBuffer packet_buffer_ = nullptr;
 };
 
 } // namespace camera_mpp

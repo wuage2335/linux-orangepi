@@ -2,14 +2,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <stdexcept>
 
 namespace camera_mpp {
 
 /*
- * A non-owning view of one encoded output packet. The producer retains the
- * storage, so a sink must finish consuming data before consume() returns.
+ * A view of one encoded output packet. Without owner the producer retains the
+ * storage and a sink must finish consuming data before consume() returns. An
+ * owner keeps externally managed storage alive for asynchronous sinks.
  */
 struct EncodedPacketView {
 	const std::uint8_t *data;
@@ -18,6 +20,7 @@ struct EncodedPacketView {
 	bool keyframe;
 	bool codec_config;
 	bool eos;
+	std::shared_ptr<const void> owner = {};
 };
 
 class EncodedPacketSink {

@@ -5,6 +5,32 @@
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
 
+## 2026-09-18 MPP到GStreamer零拷贝候选改造
+
+- 在隔离分支`codex/mpp-gstreamer-zero-copy`实施，不覆盖主工作树中已有的
+  `v4l2_mpp_rtsp_server.cpp`未提交注释。
+- `EncodedPacketView`新增共享owner；MPP每个在途输出packet使用独立buffer lease，
+  GStreamer以`gst_buffer_new_wrapped_full()`包装同一地址，RTSP header缓存与PTS
+  调整继续传递owner。
+- 新增host测试验证GstBuffer映射地址与原packet地址相同，并验证底层存储在最后
+  一个GstBuffer释放前后分别保持/释放；测试按RED失败、GREEN通过执行。
+- 代码审查后为RTP/RTSP appsrc增加`max-buffers`与downstream leaky限制，防止慢
+  管线无限持有MPP输出buffer；新增属性测试。RTP元素构造改为加入pipeline前由
+  RAII持有，并补充负PTS异常路径的owner释放测试。
+- 解耦GStreamer buffer单元测试与MPP板端动态库；WSL固定MPP 1.1.0全量host构建、
+  RTP/RTSP编译、3项streaming测试、2项benchmark测试及12项Python测试通过。
+- ASan地址检查通过；LeakSanitizer单独报告GLib初始化的16KiB全局分配，关闭第三方
+  全局泄漏检测后无地址错误。用户随后明确授权板端测试；源码包SHA256为
+  `5fa9bf109e17ebf6b2f8bc5e30c25901f73ef968d332e21773a56c1ee06f1698`。
+- Orange Pi独立目录`/home/orangepi/zero-copy-20260918`原生构建通过并输出
+  `BOARD_BUILD_AND_TESTS_OK`。固定controls的DMA-BUF RTP为300帧、30.04fps、
+  0 timeout/drop/queue overrun、10 IDR；RTSP两次客户端解码78/97帧，2次连接、
+  2次断开和2次IDR请求均通过。
+- 第一轮RTP为16.57fps，实查是历史3A暗场状态`VBLANK=1449/gain=248`，不是代码
+  性能回退；恢复1536/16/96后复测回到30.04fps。退出PM为suspended/0，无残留
+  服务且无新增Camera/MPP/IOMMU严格故障命中。9份板端日志及SHA256清单位于
+  `/home/orangepi/zero-copy-20260918/evidence/`。
+
 ## 2026-09-16 DDR读写测试
 
 - 完成CPU3/CPU7的64MiB顺序读写复制、CPU7的256MiB组和CPU4–7并发三轮。

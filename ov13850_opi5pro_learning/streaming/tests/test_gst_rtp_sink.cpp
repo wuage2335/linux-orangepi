@@ -1,6 +1,8 @@
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 #include <gst/gst.h>
@@ -12,6 +14,7 @@ namespace {
 using camera_mpp::EncodedPacketView;
 using camera_streaming::GstRtpSink;
 using camera_streaming::RtpSinkConfig;
+using camera_streaming::configure_bounded_appsrc;
 using camera_streaming::make_gst_buffer;
 
 void require(bool condition, const char *message)
@@ -84,6 +87,75 @@ void test_timed_delta_buffer()
 	gst_buffer_unref(buffer);
 }
 
+void test_owned_packet_wraps_without_copy()
+{
+	auto storage = std::make_shared<std::array<std::uint8_t, 5>>(
+		std::array<std::uint8_t, 5>{0x00, 0x00, 0x01, 0x65, 0xaa});
+	std::weak_ptr<const void> lifetime = storage;
+	const std::uint8_t *original_data = storage->data();
+	EncodedPacketView packet = {
+		original_data, storage->size(), 33333, true, false, false, storage,
+	};
+
+	GstBuffer *buffer = make_gst_buffer(packet);
+	storage.reset();
+	packet.owner.reset();
+	require(!lifetime.expired(), "GstBuffer released packet storage early");
+
+	GstMapInfo map = GST_MAP_INFO_INIT;
+	require(gst_buffer_map(buffer, &map, GST_MAP_READ), "buffer map failed");
+	require(map.data == original_data, "owned packet payload was copied");
+	gst_buffer_unmap(buffer, &map);
+
+	gst_buffer_unref(buffer);
+	require(lifetime.expired(),
+		"GstBuffer retained packet storage after release");
+}
+
+void test_appsrc_queue_is_bounded()
+{
+	GstElement *source = gst_element_factory_make("appsrc", nullptr);
+	require(source != nullptr, "failed to create appsrc for queue test");
+	configure_bounded_appsrc(source, 2);
+
+	guint64 max_buffers = 0;
+	gboolean block = TRUE;
+	GstAppLeakyType leaky = GST_APP_LEAKY_TYPE_NONE;
+	g_object_get(source,
+		     "max-buffers", &max_buffers,
+		     "block", &block,
+		     "leaky-type", &leaky,
+		     nullptr);
+	require(max_buffers == 2, "appsrc max-buffers mismatch");
+	require(!block, "bounded appsrc unexpectedly blocks producer");
+	require(leaky == GST_APP_LEAKY_TYPE_DOWNSTREAM,
+		"bounded appsrc does not drop oldest buffer");
+	gst_object_unref(source);
+}
+
+void test_invalid_owned_packet_releases_storage()
+{
+	auto storage = std::make_shared<std::array<std::uint8_t, 4>>(
+		std::array<std::uint8_t, 4>{0x00, 0x00, 0x01, 0x41});
+	std::weak_ptr<const void> lifetime = storage;
+	EncodedPacketView packet = {
+		storage->data(), storage->size(), -1, false, false, false, storage,
+	};
+
+	bool rejected = false;
+	try {
+		GstBuffer *buffer = make_gst_buffer(packet);
+		gst_buffer_unref(buffer);
+	} catch (const std::invalid_argument &) {
+		rejected = true;
+	}
+	require(rejected, "negative PTS packet was accepted");
+	storage.reset();
+	packet.owner.reset();
+	require(lifetime.expired(),
+		"rejected GstBuffer retained packet storage");
+}
+
 void test_pipeline_lifecycle()
 {
 	const RtpSinkConfig config = {
@@ -112,6 +184,9 @@ int main(int argc, char **argv)
 		test_codec_config_buffer();
 		test_timed_keyframe_buffer();
 		test_timed_delta_buffer();
+		test_owned_packet_wraps_without_copy();
+		test_appsrc_queue_is_bounded();
+		test_invalid_owned_packet_releases_storage();
 		test_pipeline_lifecycle();
 		std::cout << "PASS: GstRtpSink buffer conversion\n";
 	} catch (const std::exception &error) {

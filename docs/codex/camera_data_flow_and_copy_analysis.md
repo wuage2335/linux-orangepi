@@ -366,31 +366,50 @@ encode_put_frame
 RKVENC硬件读取DDR并写压缩输出，不进行CPU整帧copy。约8Mbps、30fps时，压缩数据
 平均约33KB/frame，而未压缩NV12是3.11MB/frame。
 
-`EncodedPacketView`只保存packet地址、大小、PTS和关键帧标志，是非拥有型视图，
-自身不复制数据。
+`EncodedPacketView`除地址、大小、PTS和关键帧标志外，还可携带共享`owner`。同步
+文件输出仍可只借用视图；异步GStreamer路径通过owner延长MPP输出buffer寿命。
 
 ## 9. MPP到GStreamer
 
-`gst_rtp_sink.cpp`中的`make_gst_buffer()`执行：
+2026-09-18候选改造前，`make_gst_buffer()`执行`gst_buffer_new_allocate()`和
+`gst_buffer_fill()`，把每个压缩packet复制到GStreamer内存。历史实测的整段
+packet转换与push耗时为Mean 66.45us、P50 60.67us、P95 89.83us；该数字包含
+分配、复制和入队，不能全部解释为复制耗时。
+
+候选改造将MPP输出buffer的引用交给`EncodedPacketView::owner`，随后执行：
 
 ```cpp
-gst_buffer_new_allocate(nullptr, packet.size, nullptr);
-gst_buffer_fill(buffer, 0, packet.data, packet.size);
+gst_buffer_new_wrapped_full(
+    GST_MEMORY_FLAG_READONLY,
+    packet.data,
+    packet.size,
+    0,
+    packet.size,
+    owner,
+    release_owner);
 ```
 
-这里有一次明确CPU copy：
+数据关系变为：
 
 ```text
-MPP packet buffer -> GstBuffer
+MPP packet buffer
+       ^
+       | 同一地址，由共享owner保持
+       v
+GstBuffer/GstMemory
 ```
 
-但复制的是约几十KB的压缩H.264，而不是3.11MB NV12。真实约8Mbps码流实测：
+MPP不再复用单一输出buffer。每个在途packet从MPP内部group取得buffer；GStreamer
+销毁最后一个相关GstBuffer后，释放回调执行`mpp_buffer_put()`，该buffer才可回到
+group复用。group本身也由lease保持，避免encoder退出后异步释放访问失效group。
+RTP和RTSP的appsrc内部队列均以`queue_buffers`限制buffer数量并配置为满载时丢弃
+最旧buffer；下游queue使用相同数量限制，避免慢客户端令MPP lease无限积累。
 
-```text
-Mean 66.45us
-P50  60.67us
-P95  89.83us
-```
+Host和aarch64板端测试均验证包装后的`GstBuffer`映射地址等于原packet地址，并
+验证owner在GstBuffer释放前存活、释放后销毁。板端原生构建输出
+`BOARD_BUILD_AND_TESTS_OK`；固定controls的DMA-BUF RTP为300帧、30.04fps、
+0 timeout/drop/queue overrun，RTSP两次连接分别解码78/97帧且重连IDR恢复通过。
+退出后sensor PM为suspended/0，严格内核日志扫描没有新增Camera/MPP/IOMMU故障。
 
 `gst_app_src_push_buffer()`之后主要是GstBuffer所有权和引用传递。
 
@@ -487,7 +506,7 @@ stats通过DMA写入，但远小于3.11MB图像。V4L2 ioctl会复制少量控�
 | RGA copy输入 | 有 | CPU读写DDR | 平均约1.25ms |
 | RGA direct输入 | 无 | RGA读输入、写输出 | 仍有DDR流量 |
 | MPP编码 | 无整帧CPU copy | RKVENC读写DDR | 产生H.264 |
-| MPP packet到GstBuffer | 有，小块 | CPU复制压缩数据 | P50约60.67us |
+| MPP packet到GstBuffer | 无payload copy | 共享MPP输出内存 | host/板端地址与生命周期测试、实机RTP/RTSP通过 |
 | GStreamer到socket | 有，小块 | 用户到内核复制 | RTP约1200B/packet |
 | Wi-Fi发送/接收 | 无应用层copy | 驱动/硬件传输 | skb/SDIO/DMA |
 | Windows socket到GStreamer | 可能有小块 | 内核到用户态 | 压缩RTP |
@@ -529,6 +548,11 @@ CPU写MPP buffer 约93.3MB/s
   `encode_external_frame(capture.mpp_buffer(frame.index), ...)`。
 - `streaming/src/v4l2_mpp_rtsp_server.cpp`：RTSP使用相同external buffer路径。
 - `mpp/src/mpp_encoder_core.hpp`：`mpp_frame_set_buffer(frame, input_buffer)`。
+- `mpp/src/mpp_encoder_core.hpp`：每个输出packet取得独立`MppBuffer`并建立共享lease。
+- `streaming/src/gst_rtp_sink.cpp`：带owner的packet通过
+  `gst_buffer_new_wrapped_full()`包装为只读GstMemory，不调用`gst_buffer_fill()`。
+- `streaming/src/gst_rtsp_server.cpp`：缓存codec header和重建实时时钟PTS时均保留
+  packet owner。
 
 ### CPU copy对照路径
 
@@ -548,6 +572,7 @@ CPU写MPP buffer 约93.3MB/s
 > 调用`encode_external_frame()`，所以V4L2到MPP没有CPU整帧copy。对照copy模式
 > 会调用`load_nv12()`复制3.11MB，P50约2.03ms，CPU从DMA路径约3.2%升到8.2%。
 > RGA当前只是独立resize实验，输出为`std::vector`并写文件，没有接入MPP，不能
-> 声称已经完成RGA到MPP的DMA-BUF共享。MPP之后仍有一次压缩packet到GstBuffer的
-> 小块CPU copy，真实8Mbps码流P50约60.67us；UDP socket、网络驱动和GPU内部也
-> 存在数据移动，所以“零拷贝”只指移除了CPU的NV12整帧复制。
+> 声称已经完成RGA到MPP的DMA-BUF共享。当前候选改造还让MPP输出packet携带共享
+> owner，并用`gst_buffer_new_wrapped_full()`直接包装同一地址；host和板端测试已
+> 证明指针相同且释放时机正确，板端300帧30.04fps及RTSP重连回归通过。RTP分包、
+> socket、网络驱动和GPU内部仍可能移动数据，因此不能称为相机到屏幕全链路零拷贝。

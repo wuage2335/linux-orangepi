@@ -85,13 +85,13 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 		return;
 
 	GstElement *appsrc = nullptr;
-	std::vector<std::uint8_t> header;
+	camera_mpp::EncodedPacketView header{};
 	std::int64_t adjusted_pts = 0;
 
 	{
 		std::lock_guard<std::mutex> lock(state_mutex_);
 		if (packet.codec_config) {
-			codec_header_.assign(packet.data, packet.data + packet.size);
+			codec_header_ = packet;
 			return;
 		}
 
@@ -105,7 +105,7 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 		}
 
 		appsrc = GST_ELEMENT(gst_object_ref(appsrc_));
-		if (header_pending_ && !codec_header_.empty()) {
+		if (header_pending_ && codec_header_.size) {
 			header = codec_header_;
 			header_pending_ = false;
 		}
@@ -117,11 +117,8 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 	 * 名义30fps固定步长之间的长期漂移，系统时间校准也不会让 PTS 倒退。
 	 */
 
-	if (!header.empty()) {
-		const camera_mpp::EncodedPacketView header_packet = {
-			header.data(), header.size(), -1, false, true, false,
-		};
-		const GstFlowReturn flow = push_packet(appsrc, header_packet);
+	if (header.size) {
+		const GstFlowReturn flow = push_packet(appsrc, header);
 		if (flow != GST_FLOW_OK && flow != GST_FLOW_FLUSHING &&
 		    flow != GST_FLOW_EOS) {
 			gst_object_unref(appsrc);
@@ -137,6 +134,7 @@ void GstRtspServerSink::consume(const camera_mpp::EncodedPacketView &packet)
 		packet.keyframe,
 		false,
 		packet.eos,
+		packet.owner,
 	};
 	const GstFlowReturn flow = push_packet(appsrc, adjusted);
 	gst_object_unref(appsrc);
@@ -309,11 +307,11 @@ void GstRtspServerSink::configure_media(GstRTSPMedia *media)
 		     "caps", caps,
 		     "is-live", TRUE,
 		     "format", GST_FORMAT_TIME,
-		     "block", FALSE,
 		     "do-timestamp", FALSE,
 		     "stream-type", GST_APP_STREAM_TYPE_STREAM,
 		     nullptr);
 	gst_caps_unref(caps);
+	configure_bounded_appsrc(source, config_.queue_buffers);
 
 	gst_bus_add_signal_watch(bus);
 	g_signal_connect(bus, "message::error", G_CALLBACK(on_bus_error), this);

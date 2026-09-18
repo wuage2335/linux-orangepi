@@ -1,5 +1,6 @@
 #include "gst_rtp_sink.hpp"
 
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -33,26 +34,88 @@ void require_element(GstElement *element, const char *name)
 					 name);
 }
 
+struct GstElementUnref {
+	void operator()(GstElement *element) const
+	{
+		if (element)
+			gst_object_unref(element);
+	}
+};
+
+using OwnedGstElement = std::unique_ptr<GstElement, GstElementUnref>;
+
+OwnedGstElement make_owned_element(const char *factory, const char *name)
+{
+	OwnedGstElement element(gst_element_factory_make(factory, name));
+	require_element(element.get(), name);
+	return element;
+}
+
+GstElement *add_owned_element(GstElement *pipeline,
+			      OwnedGstElement element,
+			      const char *name)
+{
+	GstElement *raw = element.get();
+	if (!gst_bin_add(GST_BIN(pipeline), raw))
+		throw std::runtime_error(std::string("failed to add element: ") + name);
+	element.release();
+	return raw;
+}
+
 } // 匿名命名空间
+
+void configure_bounded_appsrc(GstElement *appsrc, int max_buffers)
+{
+	if (!appsrc || !GST_IS_APP_SRC(appsrc))
+		throw std::invalid_argument("bounded source must be an appsrc");
+	if (max_buffers < 1)
+		throw std::invalid_argument("appsrc max-buffers must be positive");
+
+	g_object_set(appsrc,
+		     "block", FALSE,
+		     "max-buffers", static_cast<guint64>(max_buffers),
+		     "max-bytes", static_cast<guint64>(0),
+		     "max-time", static_cast<guint64>(0),
+		     "leaky-type", GST_APP_LEAKY_TYPE_DOWNSTREAM,
+		     nullptr);
+}
 
 GstBuffer *make_gst_buffer(const camera_mpp::EncodedPacketView &packet)
 {
 	/*
-	 * 这里把 MPP packet 内容复制到 GStreamer 自己管理的 GstBuffer。复制完成后
-	 * MPP 可以释放原 packet，后续 parser/payloader 只持有 GstBuffer。codec
-	 * header 没有显示时间；普通图像 packet 必须携带 PTS，接收端才能按 30fps
-	 * 播放而不是尽快吐完全部数据。
+	 * 带 owner 的异步 packet 直接包装为只读 GstMemory。释放回调持有 owner，
+	 * 所以下游最后一个 GstBuffer 引用销毁前，生产者不会复用底层存储。没有
+	 * owner 的同步 packet 保留复制路径，避免包装调用栈上的短生命周期内存。
 	 */
 	if (packet.size && !packet.data)
 		throw std::invalid_argument("nonempty encoded packet has no data");
 
-	GstBuffer *buffer = gst_buffer_new_allocate(nullptr, packet.size, nullptr);
-	if (!buffer)
-		throw std::runtime_error("gst_buffer_new_allocate failed");
-	if (packet.size &&
-	    gst_buffer_fill(buffer, 0, packet.data, packet.size) != packet.size) {
-		gst_buffer_unref(buffer);
-		throw std::runtime_error("gst_buffer_fill wrote incomplete packet");
+	GstBuffer *buffer = nullptr;
+	if (packet.owner) {
+		auto *owner = new std::shared_ptr<const void>(packet.owner);
+		buffer = gst_buffer_new_wrapped_full(
+			GST_MEMORY_FLAG_READONLY,
+			const_cast<std::uint8_t *>(packet.data),
+			packet.size,
+			0,
+			packet.size,
+			owner,
+			[](gpointer data) {
+				delete static_cast<std::shared_ptr<const void> *>(data);
+			});
+		if (!buffer) {
+			delete owner;
+			throw std::runtime_error("gst_buffer_new_wrapped_full failed");
+		}
+	} else {
+		buffer = gst_buffer_new_allocate(nullptr, packet.size, nullptr);
+		if (!buffer)
+			throw std::runtime_error("gst_buffer_new_allocate failed");
+		if (packet.size &&
+		    gst_buffer_fill(buffer, 0, packet.data, packet.size) != packet.size) {
+			gst_buffer_unref(buffer);
+			throw std::runtime_error("gst_buffer_fill wrote incomplete packet");
+		}
 	}
 
 	if (packet.codec_config) {
@@ -173,17 +236,21 @@ void GstRtpSink::initialize(const RtpSinkConfig &config)
 
 	gst_init(nullptr, nullptr);
 	pipeline_ = gst_pipeline_new("mpp-rtp-pipeline");
-	appsrc_ = gst_element_factory_make("appsrc", "source");
-	queue_ = gst_element_factory_make("queue", "network-queue");
-	GstElement *parser = gst_element_factory_make("h264parse", "parser");
-	GstElement *payloader = gst_element_factory_make("rtph264pay", "payloader");
-	GstElement *udp = gst_element_factory_make("udpsink", "udp-sink");
 	require_element(pipeline_, "pipeline");
-	require_element(appsrc_, "appsrc");
-	require_element(queue_, "queue");
-	require_element(parser, "h264parse");
-	require_element(payloader, "rtph264pay");
-	require_element(udp, "udpsink");
+
+	auto appsrc = make_owned_element("appsrc", "source");
+	auto queue = make_owned_element("queue", "network-queue");
+	auto parser_owner = make_owned_element("h264parse", "parser");
+	auto payloader_owner = make_owned_element("rtph264pay", "payloader");
+	auto udp_owner = make_owned_element("udpsink", "udp-sink");
+	appsrc_ = add_owned_element(pipeline_, std::move(appsrc), "appsrc");
+	queue_ = add_owned_element(pipeline_, std::move(queue), "queue");
+	GstElement *parser =
+		add_owned_element(pipeline_, std::move(parser_owner), "h264parse");
+	GstElement *payloader =
+		add_owned_element(pipeline_, std::move(payloader_owner), "rtph264pay");
+	GstElement *udp =
+		add_owned_element(pipeline_, std::move(udp_owner), "udpsink");
 
 	GstCaps *caps = gst_caps_new_simple(
 		"video/x-h264",
@@ -199,11 +266,11 @@ void GstRtpSink::initialize(const RtpSinkConfig &config)
 		     "caps", caps,
 		     "is-live", TRUE,
 		     "format", GST_FORMAT_TIME,
-		     "block", FALSE,
 		     "do-timestamp", FALSE,
 		     "stream-type", GST_APP_STREAM_TYPE_STREAM,
 		     nullptr);
 	gst_caps_unref(caps);
+	configure_bounded_appsrc(appsrc_, config.queue_buffers);
 
 	g_object_set(queue_,
 		     "max-size-buffers", config.queue_buffers,
@@ -225,8 +292,6 @@ void GstRtpSink::initialize(const RtpSinkConfig &config)
 		     "async", FALSE,
 		     nullptr);
 
-	gst_bin_add_many(GST_BIN(pipeline_), appsrc_, queue_, parser, payloader,
-			 udp, nullptr);
 	if (!gst_element_link_many(appsrc_, queue_, parser, payloader, udp, nullptr))
 		throw std::runtime_error("failed to link RTP pipeline");
 

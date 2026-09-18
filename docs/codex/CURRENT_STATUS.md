@@ -23,6 +23,11 @@
 阶段0–6已验收：驱动/DTS、RKISP、RGA实验、MPP编码、RTP/RTSP、RKAIQ/3A、性能
 与稳定性。阶段7功能扩展尚未实施。
 
+- 2026-09-18隔离分支`codex/mpp-gstreamer-zero-copy`完成MPP packet到GStreamer
+  的payload零拷贝：共享owner保持MPP输出buffer，GstBuffer包装同一地址，appsrc
+  与下游queue均有界。板端300帧DMA-BUF RTP为30.04fps、0 timeout/drop/overrun，
+  RTSP两次连接解码与IDR恢复通过；证据位于板端`zero-copy-20260918/evidence/`。
+
 - 主链：OV13850 → RKISP → V4L2 NV12 → DMA-BUF → MPP H.264 → RTP/RTSP。
 - 双模式、Controls、runtime PM、TRY/ACTIVE、生命周期与重复启停已有实机证据。
 - MPP支持H.264/H.265文件编码；当前RTSP业务只支持H.264。

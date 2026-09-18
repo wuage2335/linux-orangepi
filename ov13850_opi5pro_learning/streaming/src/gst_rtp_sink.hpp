@@ -23,11 +23,18 @@ struct RtpSinkConfig {
 };
 
 /**
- * @brief 把 MPP 编码包复制为由 GStreamer 管理的缓冲区。
+ * @brief 限制appsrc内部队列并在满载时丢弃最旧buffer。
+ * @param appsrc 待配置的GStreamer appsrc元素。
+ * @param max_buffers 允许appsrc内部持有的最大buffer数量。
+ */
+void configure_bounded_appsrc(GstElement *appsrc, int max_buffers);
+
+/**
+ * @brief 把编码包转换为 GStreamer 缓冲区。
  * @param packet MPP 输出的 H.264 编码包视图。
- * @return 新建的 GstBuffer；所有权交给调用者或后续 appsrc。
+ * @return 新建的 GstBuffer；带 owner 时共享原存储，否则复制数据。
  * @throws std::invalid_argument 编码包描述无效时抛出。
- * @throws std::runtime_error 分配或复制 GstBuffer 失败时抛出。
+ * @throws std::runtime_error 分配、包装或复制 GstBuffer 失败时抛出。
  */
 GstBuffer *make_gst_buffer(const camera_mpp::EncodedPacketView &packet);
 

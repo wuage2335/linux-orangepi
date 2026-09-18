@@ -44,14 +44,16 @@ RPATH := -Wl,--enable-new-dtags,-rpath,'$$ORIGIN/../lib'
 MPP_LDLIBS := -lrockchip_mpp -pthread -ldl
 
 .PHONY: all rtp rtsp smoke test-rtp-sink test-congestion test-live-pts \
-	check-env runtime-lib clean
+	check-gst-env check-env runtime-lib clean
 
 all: rtp
 
-check-env:
+check-gst-env:
 	@command -v $(CXX) >/dev/null
 	@command -v pkg-config >/dev/null
 	@pkg-config --exists $(GST_MODULES)
+
+check-env: check-gst-env
 	@test -f $(MPP_BUNDLE)/include/rockchip/rk_mpi.h
 	@test -f $(MPP_BUNDLE)/lib/librockchip_mpp.so.0
 	@echo STREAMING_BUILD_ENV=OK
@@ -71,16 +73,15 @@ smoke: $(SMOKE_BIN)
 	LD_LIBRARY_PATH=$(LIB_DIR) $(SMOKE_BIN)
 
 $(RTP_SINK_TEST_BIN): $(RTP_SINK_TEST_SOURCE) $(RTP_SINK_SOURCE) \
-		$(RTP_SINK_HEADER) $(MPP_SRC)/encoded_packet_sink.hpp | check-env runtime-lib
+		$(RTP_SINK_HEADER) $(MPP_SRC)/encoded_packet_sink.hpp | check-gst-env
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) \
 		$$(pkg-config --cflags $(GST_MODULES)) \
 		$(RTP_SINK_TEST_SOURCE) $(RTP_SINK_SOURCE) \
-		$(MPP_LDFLAGS) $(RPATH) \
-		$$(pkg-config --libs $(GST_MODULES)) $(MPP_LDLIBS) -o $@
+		$$(pkg-config --libs $(GST_MODULES)) -pthread -o $@
 
 test-rtp-sink: $(RTP_SINK_TEST_BIN)
-	LD_LIBRARY_PATH=$(LIB_DIR) $(RTP_SINK_TEST_BIN)
+	$(RTP_SINK_TEST_BIN)
 
 $(CONGESTION_TEST_BIN): $(CONGESTION_TEST_SOURCE) $(CONGESTION_HEADER)
 	@mkdir -p $(dir $@)
