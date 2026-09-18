@@ -27,6 +27,10 @@
   的payload零拷贝：共享owner保持MPP输出buffer，GstBuffer包装同一地址，appsrc
   与下游queue均有界。板端300帧DMA-BUF RTP为30.04fps、0 timeout/drop/overrun，
   RTSP两次连接解码与IDR恢复通过；证据位于板端`zero-copy-20260918/evidence/`。
+- 同分支后续增加固定MPP packet buffer池，默认2个。板端1–4 buffer扫描及慢客户端
+  压力中实际峰值始终为1，1-buffer也保持30.04fps、RTSP重连解码和0 pool miss，
+  因而实测最小值为1；默认2用于保留安全余量。固定池CPU与动态池同为约4–5%，
+  主要收益是DMA输出内存有严格上限。证据位于`two-buffer-20260918/evidence/`。
 
 - 主链：OV13850 → RKISP → V4L2 NV12 → DMA-BUF → MPP H.264 → RTP/RTSP。
 - 双模式、Controls、runtime PM、TRY/ACTIVE、生命周期与重复启停已有实机证据。

@@ -48,6 +48,7 @@ struct CommandLine {
 	int gop = 30;
 	int mtu = 1200;
 	int queue_buffers = 2;
+	int packet_buffers = 2;
 	bool use_dmabuf = true;
 };
 
@@ -117,6 +118,9 @@ CommandLine parse_command_line(int argc, char **argv)
 		else if (option == "--queue-buffers")
 			command.queue_buffers =
 				parse_integer(value, "--queue-buffers", 1, 1000);
+		else if (option == "--packet-buffers")
+			command.packet_buffers =
+				parse_integer(value, "--packet-buffers", 1, 64);
 		else if (option == "--mode") {
 			const std::string mode = value;
 			if (mode == "dmabuf")
@@ -147,7 +151,8 @@ void print_usage(const char *program)
 	std::cerr << "usage: " << program << '\n'
 		  << "  --host IPv4 [--port 5004] [--device /dev/video11]\n"
 		  << "  [--frames 300] [--bitrate 8000000] [--gop 30]\n"
-		  << "  [--mtu 1200] [--queue-buffers 2] [--mode dmabuf|copy]\n";
+		  << "  [--mtu 1200] [--queue-buffers 2] [--packet-buffers 2]\n"
+		  << "  [--mode dmabuf|copy]\n";
 }
 
 } // 匿名命名空间
@@ -180,6 +185,7 @@ int main(int argc, char **argv)
 		encoder_config.bitrate = command.bitrate;
 		encoder_config.gop = command.gop;
 		encoder_config.ver_stride = command.use_dmabuf ? kHeight : kVerStride;
+		encoder_config.packet_buffers = command.packet_buffers;
 
 		RtpSinkConfig rtp_config;
 		rtp_config.host = command.host;
@@ -207,6 +213,7 @@ int main(int argc, char **argv)
 		std::uint64_t dropped = 0;
 		std::uint32_t previous_sequence = 0;
 		bool have_previous = false;
+		int frames_in = 0;
 		int frames_sent = 0;
 		const auto start = Clock::now();
 
@@ -232,6 +239,7 @@ int main(int argc, char **argv)
 			}
 
 			const bool final_frame = index == command.frames - 1;
+			const std::uint64_t packets_before = stats.packets;
 			if (command.use_dmabuf) {
 				encoder.encode_external_frame(
 					capture.mpp_buffer(frame.index), index,
@@ -240,6 +248,8 @@ int main(int argc, char **argv)
 			} else {
 				encoder.encode_frame(index, final_frame, rtp_sink, stats);
 			}
+			if (stats.packets > packets_before)
+				++frames_sent;
 			rtp_sink.throw_on_bus_error();
 			if (congestion.observe(rtp_sink.queue_overruns(), index)) {
 				/*
@@ -252,13 +262,14 @@ int main(int argc, char **argv)
 					  << " request_idr=" << congestion.idr_requests()
 					  << '\n';
 			}
-			++frames_sent;
+			++frames_in;
 		}
 
 		const auto end = Clock::now();
 		capture.stop();
 		rtp_sink.end_of_stream();
 		rtp_sink.throw_on_bus_error();
+		encoder.update_packet_pool_stats(stats);
 
 		const double seconds =
 			std::chrono::duration<double>(end - start).count();
@@ -268,13 +279,20 @@ int main(int argc, char **argv)
 			  << " gop=" << command.gop
 			  << " destination=" << command.host << ':' << command.port
 			  << '\n';
-		std::cout << "frames_in=" << frames_sent
+		std::cout << "frames_in=" << frames_in
 			  << " frames_sent=" << frames_sent
 			  << " timeouts=" << timeouts
 			  << " dropped=" << dropped << '\n';
 		std::cout << "packets=" << stats.packets
 			  << " idr_frames=" << stats.idr_frames
 			  << " encoded_bytes=" << stats.encoded_bytes << '\n';
+		std::cout << "packet_pool_capacity=" << stats.packet_pool_capacity
+			  << " shutdown_snapshot_in_flight="
+			  << stats.packet_pool_in_flight
+			  << " peak_in_flight=" << stats.packet_pool_peak
+			  << " misses=" << stats.packet_pool_misses
+			  << " recovery_idr_requests="
+			  << stats.packet_pool_recovery_idr_requests << '\n';
 		std::cout << "rtp_clock_rate=90000 timestamp_step=3000"
 			  << " queue_overruns=" << rtp_sink.queue_overruns() << '\n';
 		std::cout << "congestion_events=" << congestion.overrun_events()
@@ -289,7 +307,7 @@ int main(int argc, char **argv)
 			std::cout << "STREAM_RTP_INTERRUPTED\n";
 			return 130;
 		}
-		if (frames_sent != command.frames)
+		if (frames_in != command.frames)
 			throw std::runtime_error("sender stopped before requested frame count");
 		std::cout << "STREAM_RTP_OK\n";
 	} catch (const std::exception &error) {

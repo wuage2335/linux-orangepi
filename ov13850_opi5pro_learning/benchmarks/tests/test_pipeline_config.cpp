@@ -30,12 +30,14 @@ int main()
 	require(defaults.sink == camera_timing::SinkMode::Null, "default sink");
 	require(defaults.warmup == 30, "default warmup");
 	require(defaults.frames == 300, "default frames");
+	require(defaults.packet_buffers == 2, "default packet buffers");
 
 	const auto custom = parse({
 		"benchmark", "--mode", "copy", "--sink", "rtp",
 		"--host", "192.168.1.9", "--port", "6000",
 		"--warmup", "5", "--frames", "40", "--bitrate", "4000000",
-		"--gop", "15", "--csv", "/tmp/result.csv",
+		"--gop", "15", "--packet-buffers", "4",
+		"--csv", "/tmp/result.csv",
 	});
 	require(custom.mode == camera_timing::InputMode::Copy, "copy mode");
 	require(custom.sink == camera_timing::SinkMode::Rtp, "rtp sink");
@@ -43,6 +45,7 @@ int main()
 	require(custom.port == 6000, "port");
 	require(custom.warmup == 5 && custom.frames == 40, "frame counts");
 	require(custom.bitrate == 4000000 && custom.gop == 15, "encoder config");
+	require(custom.packet_buffers == 4, "packet buffer config");
 	require(custom.csv_path == "/tmp/result.csv", "csv path");
 
 	bool rejected = false;
@@ -52,6 +55,14 @@ int main()
 		rejected = true;
 	}
 	require(rejected, "zero frames must be rejected");
+
+	rejected = false;
+	try {
+		(void)parse({"benchmark", "--packet-buffers", "65"});
+	} catch (const std::invalid_argument &) {
+		rejected = true;
+	}
+	require(rejected, "packet buffer count above 64 must be rejected");
 
 	std::cout << "PASS: pipeline benchmark config\n";
 	return 0;

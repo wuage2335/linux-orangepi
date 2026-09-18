@@ -44,6 +44,7 @@ struct CommandLine {
 	int gop = 30;
 	int mtu = 1200;
 	int queue_buffers = 2;
+	int packet_buffers = 2;
 	bool use_dmabuf = true;
 };
 
@@ -130,6 +131,9 @@ CommandLine parse_command_line(int argc, char **argv)
 		else if (option == "--queue-buffers")
 			command.queue_buffers =
 				parse_integer(value, "--queue-buffers", 1, 1000);
+		else if (option == "--packet-buffers")
+			command.packet_buffers =
+				parse_integer(value, "--packet-buffers", 1, 64);
 		else if (option == "--mode") {
 			const std::string mode = value;
 			if (mode == "dmabuf")
@@ -156,7 +160,7 @@ void print_usage(const char *program)
 	std::cerr << "usage: " << program << '\n'
 		  << "  [--device /dev/video11] [--service 8554] [--mount /live]\n"
 		  << "  [--bitrate 8000000] [--gop 30] [--mtu 1200]\n"
-		  << "  [--queue-buffers 2] [--mode dmabuf|copy]\n";
+		  << "  [--queue-buffers 2] [--packet-buffers 2] [--mode dmabuf|copy]\n";
 }
 
 /**
@@ -180,6 +184,7 @@ void run_capture_worker(const CommandLine &command,
 		encoder_config.gop = command.gop;
 		// 由于 Mpp 要求十六行对齐, 因此需要按照 16 的倍数来计算垂直步幅
 		encoder_config.ver_stride = command.use_dmabuf ? kHeight : kVerStride;
+		encoder_config.packet_buffers = command.packet_buffers;
 		// 选择v4l2的内存模式
 		// mmp only模式: v4l2驱动缓存去->mmap到cpu->cpu memcpy到mpp内部缓存区->mpp编码
 		// dmabuf模式: v4l2驱动缓存去->VIDIOC_EXPBUFF 导出dma-buff fd->mpp import 同一块缓冲区——>mpp 直接读取
@@ -252,6 +257,7 @@ void run_capture_worker(const CommandLine &command,
 		}
 
 		capture.stop();
+		encoder.update_packet_pool_stats(result.encoder);
 		result.elapsed_seconds =
 			std::chrono::duration<double>(Clock::now() - start).count();
 	} catch (const std::exception &error) {
@@ -339,6 +345,14 @@ int main(int argc, char **argv)
 		std::cout << "packets=" << result.encoder.packets
 			  << " idr_frames=" << result.encoder.idr_frames
 			  << " encoded_bytes=" << result.encoder.encoded_bytes << '\n';
+		std::cout << "packet_pool_capacity="
+			  << result.encoder.packet_pool_capacity
+			  << " shutdown_snapshot_in_flight="
+			  << result.encoder.packet_pool_in_flight
+			  << " peak_in_flight=" << result.encoder.packet_pool_peak
+			  << " misses=" << result.encoder.packet_pool_misses
+			  << " recovery_idr_requests="
+			  << result.encoder.packet_pool_recovery_idr_requests << '\n';
 		std::cout << "rtsp_pushed_packets=" << sink.pushed_packets()
 			  << " rtsp_dropped_packets=" << sink.dropped_packets()
 			  << " connections=" << sink.client_connections()

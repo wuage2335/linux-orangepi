@@ -42,7 +42,8 @@ tar -C "$STREAMING_ROOT" \
 	-cf - . |
 	tar -C "$PACKAGE_ROOT/streaming" -xf -
 
-for header in encoded_packet_sink.hpp mpp_encoder_core.hpp v4l2_capture.hpp; do
+for header in encoded_packet_sink.hpp fixed_slot_pool.hpp mpp_encoder_core.hpp \
+	v4l2_capture.hpp; do
 	cp "$MPP_ROOT/src/$header" "$PACKAGE_ROOT/mpp/src/$header"
 done
 

@@ -43,6 +43,7 @@ grep -F 'ERROR:' "$LOG" >/dev/null ||
 	--gop 30 \
 	--mtu 1200 \
 	--queue-buffers 2 \
+	--packet-buffers 2 \
 	--mode dmabuf |
 	tee "$LOG"
 
@@ -56,6 +57,8 @@ grep -F 'rtp_clock_rate=90000' "$LOG" >/dev/null ||
 grep -Eq 'queue_overruns=[0-9]+' "$LOG" || fail "missing queue overrun count"
 grep -F 'congestion_events=0 congestion_idr_requests=0' "$LOG" >/dev/null ||
 	fail "unexpected congestion recovery counters"
+grep -Eq '^packet_pool_capacity=2 shutdown_snapshot_in_flight=[0-2] peak_in_flight=[12] misses=0 recovery_idr_requests=0$' "$LOG" ||
+	fail "two-packet-buffer pool exhausted or reported invalid statistics"
 grep -F 'STREAM_RTP_OK' "$LOG" >/dev/null || fail "missing success marker"
 
 PM_ROOT=/sys/bus/i2c/devices/3-0010/power

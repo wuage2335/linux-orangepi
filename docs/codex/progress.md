@@ -30,6 +30,16 @@
   性能回退；恢复1536/16/96后复测回到30.04fps。退出PM为suspended/0，无残留
   服务且无新增Camera/MPP/IOMMU严格故障命中。9份板端日志及SHA256清单位于
   `/home/orangepi/zero-copy-20260918/evidence/`。
+- 后续将每帧动态MPP输出buffer改成固定预分配池，默认`packet_buffers=2`，并新增
+  capacity/in-flight/peak/miss/recovery-IDR统计及固定slot池RED/GREEN测试。pool满时
+  跳过当前编码帧，下一次成功提交前请求IDR，禁止覆盖在途buffer。
+- 板端容量扫描中，RTP使用1/2/3/4个buffer各300帧均为30.03–30.04fps、0 miss，
+  所有组`peak_in_flight=1`。1-buffer RTSP两次连接分别解码141/176帧，355输入帧
+  0 miss；200ms/帧慢客户端持续20秒时731输入帧、服务端主动丢旧packet 166个，
+  但MPP pool仍peak=1、0 miss，RSS约12.4–16.0MB。
+- 因此本架构实测最小需求为1个MPP packet buffer；默认仍保留2个作为未覆盖场景的
+  安全余量。CPU7绑核三轮中，动态池、固定1-buffer和固定2-buffer均约0.56秒CPU/
+  轮、4–5%，固定池未显著降低CPU，但将MPP输出DMA内存改为严格有界。
 
 ## 2026-09-16 DDR读写测试
 

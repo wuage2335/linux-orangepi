@@ -261,6 +261,7 @@ int main(int argc, char **argv)
 		EncoderConfig encoder_config;
 		encoder_config.bitrate = config.bitrate;
 		encoder_config.gop = config.gop;
+		encoder_config.packet_buffers = config.packet_buffers;
 		encoder_config.ver_stride = config.mode == InputMode::DmaBuf ?
 			camera_mpp::kHeight : camera_mpp::kVerStride;
 		const std::uint64_t encoder_init_start = monotonic_ns();
@@ -315,6 +316,7 @@ int main(int argc, char **argv)
 		}
 		capture.stop();
 		sink.finish();
+		encoder.update_packet_pool_stats(encoder_stats);
 		const double run_seconds =
 			elapsed_us(stream_start, monotonic_ns()) / 1000000.0;
 
@@ -323,7 +325,8 @@ int main(int argc, char **argv)
 			  << "mode=" << camera_timing::input_mode_name(config.mode)
 			  << " sink=" << camera_timing::sink_mode_name(config.sink)
 			  << " warmup=" << config.warmup
-			  << " frames=" << config.frames << '\n'
+			  << " frames=" << config.frames
+			  << " packet_buffers=" << config.packet_buffers << '\n'
 			  << "capture_init_us=" << capture_init_us
 			  << " encoder_init_us=" << encoder_init_us
 			  << " sink_init_us=" << sink_init_us
@@ -337,6 +340,14 @@ int main(int argc, char **argv)
 			  << " packets=" << sink.packets()
 			  << " encoded_bytes=" << sink.bytes()
 			  << " queue_overruns=" << sink.queue_overruns() << '\n';
+		std::cout << "packet_pool_capacity="
+			  << encoder_stats.packet_pool_capacity
+			  << " shutdown_snapshot_in_flight="
+			  << encoder_stats.packet_pool_in_flight
+			  << " peak_in_flight=" << encoder_stats.packet_pool_peak
+			  << " misses=" << encoder_stats.packet_pool_misses
+			  << " recovery_idr_requests="
+			  << encoder_stats.packet_pool_recovery_idr_requests << '\n';
 		print_series(rows);
 		std::cout << "csv=" << config.csv_path << '\n'
 			  << "PIPELINE_STAGE_BENCHMARK_OK\n";

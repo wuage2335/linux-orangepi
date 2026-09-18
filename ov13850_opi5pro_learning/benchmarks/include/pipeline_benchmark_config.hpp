@@ -27,6 +27,7 @@ struct BenchmarkConfig {
 	int gop = 30;
 	int mtu = 1200;
 	int queue_buffers = 2;
+	int packet_buffers = 2;
 	std::string csv_path = "pipeline-timing.csv";
 };
 
@@ -90,6 +91,9 @@ inline BenchmarkConfig parse_benchmark_config(int argc, char **argv)
 		else if (option == "--queue-buffers")
 			config.queue_buffers =
 				parse_positive_integer(value, "--queue-buffers", 1000);
+		else if (option == "--packet-buffers")
+			config.packet_buffers =
+				parse_positive_integer(value, "--packet-buffers", 64);
 		else if (option == "--csv")
 			config.csv_path = value;
 		else

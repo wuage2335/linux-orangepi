@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-[[ $# -ge 2 && $# -le 4 ]] || {
-	echo "usage: $0 <streaming-root> <video-device> [service] [mount]" >&2
+[[ $# -ge 2 && $# -le 5 ]] || {
+	echo "usage: $0 <streaming-root> <video-device> [service] [mount] [packet-buffers]" >&2
 	exit 2
 }
 
@@ -10,6 +10,7 @@ ROOT=$(cd "$1" && pwd)
 DEVICE=$2
 SERVICE=${3:-8554}
 MOUNT=${4:-/live}
+PACKET_BUFFERS=${5:-2}
 BIN="$ROOT/build/bin/v4l2_mpp_rtsp_server"
 SERVER_LOG=$(mktemp)
 CLIENT_ONE_LOG=$(mktemp)
@@ -124,6 +125,7 @@ command -v timeout >/dev/null || fail "missing timeout"
 	--gop 30 \
 	--mtu 1200 \
 	--queue-buffers 2 \
+	--packet-buffers "$PACKET_BUFFERS" \
 	--mode dmabuf \
 	>"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
@@ -151,6 +153,17 @@ SERVER_PID=
 
 grep -F 'RTSP_SERVER_STOPPED' "$SERVER_LOG" >/dev/null ||
 	fail "missing clean shutdown marker"
+pool_line=$(grep '^packet_pool_capacity=' "$SERVER_LOG" | tail -1 || true)
+[[ -n $pool_line ]] || fail "missing packet pool statistics"
+capacity=$(sed -n 's/.*packet_pool_capacity=\([0-9][0-9]*\).*/\1/p' <<<"$pool_line")
+snapshot=$(sed -n 's/.*shutdown_snapshot_in_flight=\([0-9][0-9]*\).*/\1/p' <<<"$pool_line")
+peak=$(sed -n 's/.*peak_in_flight=\([0-9][0-9]*\).*/\1/p' <<<"$pool_line")
+misses=$(sed -n 's/.*misses=\([0-9][0-9]*\).*/\1/p' <<<"$pool_line")
+recovery=$(sed -n 's/.*recovery_idr_requests=\([0-9][0-9]*\).*/\1/p' <<<"$pool_line")
+[[ $capacity == "$PACKET_BUFFERS" ]] || fail "packet pool capacity mismatch"
+((snapshot <= PACKET_BUFFERS)) || fail "packet pool snapshot exceeds capacity"
+((peak >= 1 && peak <= PACKET_BUFFERS)) || fail "packet pool peak is invalid"
+((misses == 0 && recovery == 0)) || fail "packet pool exhausted during RTSP recovery"
 
 PM_ROOT=/sys/bus/i2c/devices/3-0010/power
 [[ $(cat "$PM_ROOT/runtime_status") == suspended ]] ||

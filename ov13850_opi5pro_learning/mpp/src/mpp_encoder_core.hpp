@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "mpp_buffer.h"
 #include "mpp_frame.h"
@@ -16,6 +18,7 @@
 #include "rk_venc_cfg.h"
 
 #include "encoded_packet_sink.hpp"
+#include "fixed_slot_pool.hpp"
 
 namespace camera_mpp {
 
@@ -54,12 +57,18 @@ struct EncoderConfig {
 	int bitrate = 8000000;
 	int gop = 60;
 	int ver_stride = kVerStride;
+	int packet_buffers = 2;
 };
 
 struct EncoderStats {
 	std::uint64_t encoded_bytes = 0; // MPP总共输出的字节数
 	std::uint64_t packets = 0; // MPP 总共输出的 packet 数量
 	std::uint64_t idr_frames = 0; // 实际编码出来的IDR帧的数量
+	std::size_t packet_pool_capacity = 0;
+	std::size_t packet_pool_in_flight = 0;
+	std::size_t packet_pool_peak = 0;
+	std::uint64_t packet_pool_misses = 0;
+	std::uint64_t packet_pool_recovery_idr_requests = 0;
 };
 
 inline const char *codec_name(Codec codec)
@@ -89,14 +98,14 @@ struct MppBufferGroupOwner {
 	MppBufferGroup group = nullptr;
 };
 
-struct MppPacketBufferLease {
-	MppPacketBufferLease(MppBuffer owned_buffer,
-			     std::shared_ptr<MppBufferGroupOwner> owned_group)
+struct MppOwnedBufferLease {
+	MppOwnedBufferLease(MppBuffer owned_buffer,
+			    std::shared_ptr<MppBufferGroupOwner> owned_group)
 		: buffer(owned_buffer), group(std::move(owned_group))
 	{
 	}
 
-	~MppPacketBufferLease()
+	~MppOwnedBufferLease()
 	{
 		if (buffer)
 			mpp_buffer_put(buffer);
@@ -130,6 +139,91 @@ public:
 
 private:
 	MppBuffer buffer_ = nullptr;
+};
+
+/**
+ * @brief 预分配固定数量MPP输出buffer，并通过lease归还slot。
+ */
+class MppPacketBufferPool :
+	public std::enable_shared_from_this<MppPacketBufferPool> {
+public:
+	class Lease {
+	public:
+		Lease(std::shared_ptr<MppPacketBufferPool> pool, std::size_t index)
+			: pool_(std::move(pool)), index_(index)
+		{
+		}
+
+		~Lease()
+		{
+			pool_->slots_.release(index_);
+		}
+
+		Lease(const Lease &) = delete;
+		Lease &operator=(const Lease &) = delete;
+
+		MppBuffer buffer() const
+		{
+			return pool_->buffers_.at(index_);
+		}
+
+	private:
+		std::shared_ptr<MppPacketBufferPool> pool_;
+		std::size_t index_;
+	};
+
+	MppPacketBufferPool(std::shared_ptr<MppBufferGroupOwner> group_owner,
+			    std::size_t capacity)
+		: group_owner_(std::move(group_owner)), slots_(capacity)
+	{
+		buffers_.reserve(capacity);
+		try {
+			for (std::size_t index = 0; index < capacity; ++index) {
+				MppBuffer buffer = nullptr;
+				check_mpp(mpp_buffer_get(group_owner_->group, &buffer,
+							 kFrameSize),
+					  "mpp_buffer_get(packet pool)");
+				buffers_.push_back(buffer);
+			}
+		} catch (...) {
+			for (MppBuffer buffer : buffers_)
+				mpp_buffer_put(buffer);
+			buffers_.clear();
+			throw;
+		}
+	}
+
+	~MppPacketBufferPool()
+	{
+		for (MppBuffer buffer : buffers_)
+			mpp_buffer_put(buffer);
+	}
+
+	MppPacketBufferPool(const MppPacketBufferPool &) = delete;
+	MppPacketBufferPool &operator=(const MppPacketBufferPool &) = delete;
+
+	std::shared_ptr<Lease> try_acquire()
+	{
+		const auto index = slots_.try_acquire();
+		if (!index)
+			return {};
+		try {
+			return std::make_shared<Lease>(shared_from_this(), *index);
+		} catch (...) {
+			slots_.release(*index);
+			throw;
+		}
+	}
+
+	std::size_t capacity() const { return slots_.capacity(); }
+	std::size_t in_flight() const { return slots_.in_flight(); }
+	std::size_t peak_in_flight() const { return slots_.peak_in_flight(); }
+	std::uint64_t acquire_misses() const { return slots_.acquire_misses(); }
+
+private:
+	std::shared_ptr<MppBufferGroupOwner> group_owner_;
+	FixedSlotPool slots_;
+	std::vector<MppBuffer> buffers_;
 };
 
 class MppEncoder {
@@ -191,19 +285,31 @@ public:
 		}
 
 		try {
+			const auto owner = retain_packet_buffer(packet, group_owner_);
 			deliver_packet(sink, packet, stats, -1, false, true,
-				       group_owner_);
+				       owner);
 		} catch (...) {
 			mpp_packet_deinit(&packet);
 			throw;
 		}
 		mpp_packet_deinit(&packet);
+		update_packet_pool_stats(stats);
 	}
 
 	void request_idr()
 	{
 		check_mpp(mpi_->control(ctx_, MPP_ENC_SET_IDR_FRAME, nullptr),
 			  "MPP_ENC_SET_IDR_FRAME");
+	}
+
+	void update_packet_pool_stats(EncoderStats &stats) const
+	{
+		if (!packet_pool_)
+			return;
+		stats.packet_pool_capacity = packet_pool_->capacity();
+		stats.packet_pool_in_flight = packet_pool_->in_flight();
+		stats.packet_pool_peak = packet_pool_->peak_in_flight();
+		stats.packet_pool_misses = packet_pool_->acquire_misses();
 	}
 
 	bool encode_frame(int index,
@@ -234,11 +340,21 @@ private:
 			   EncoderStats &stats)
 	{
 		/*
-		 * 每个输入帧创建一个轻量 MppFrame 描述符和独立的输出buffer。阻塞
-		 * 输出模式保证返回前硬件已消费输入；输出buffer则由packet owner保持，
-		 * 直到GStreamer释放最后一个引用后才回到MPP group供后续帧复用。
+		 * 每个输入帧从固定池借一个预分配输出buffer。GStreamer释放最后一个
+		 * 引用后lease归还slot；池耗尽时跳过本帧，禁止覆盖仍在途的数据。
 		 */
-		ScopedMppBuffer output_buffer(group_owner_->group, kFrameSize);
+		auto output_lease = packet_pool_->try_acquire();
+		if (!output_lease) {
+			request_idr_after_pool_miss_ = true;
+			update_packet_pool_stats(stats);
+			return false;
+		}
+		if (request_idr_after_pool_miss_) {
+			request_idr();
+			request_idr_after_pool_miss_ = false;
+			++stats.packet_pool_recovery_idr_requests;
+		}
+
 		MppFrame frame = nullptr;
 		MppPacket packet = nullptr;
 		check_mpp(mpp_frame_init(&frame), "mpp_frame_init");
@@ -253,7 +369,7 @@ private:
 		mpp_frame_set_eos(frame, end_of_stream);
 		mpp_frame_set_buffer(frame, input_buffer);
 
-		MPP_RET ret = mpp_packet_init_with_buffer(&packet, output_buffer.get());
+		MPP_RET ret = mpp_packet_init_with_buffer(&packet, output_lease->buffer());
 		if (ret != MPP_OK) {
 			mpp_frame_deinit(&frame);
 			check_mpp(ret, "mpp_packet_init_with_buffer(frame)");
@@ -293,13 +409,14 @@ private:
 		try {
 			deliver_packet(sink, packet, stats,
 				       static_cast<std::int64_t>(index) * 1000000 / kFps,
-				       is_intra, false, group_owner_);
+				       is_intra, false, output_lease);
 			++stats.packets;
 		} catch (...) {
 			mpp_packet_deinit(&packet);
 			throw;
 		}
 		mpp_packet_deinit(&packet);
+		update_packet_pool_stats(stats);
 		return eos;
 	}
 
@@ -335,7 +452,7 @@ private:
 				   std::int64_t pts_us,
 				   bool keyframe,
 				   bool codec_config,
-				   const std::shared_ptr<MppBufferGroupOwner> &group_owner)
+				   std::shared_ptr<const void> owner)
 	{
 		const std::size_t length = mpp_packet_get_length(packet);
 		if (!length)
@@ -344,20 +461,6 @@ private:
 		void *position = mpp_packet_get_pos(packet);
 		if (!position)
 			throw std::runtime_error("packet has no data pointer");
-		MppBuffer packet_buffer = mpp_packet_get_buffer(packet);
-		if (!packet_buffer)
-			throw std::runtime_error("packet has no MPP buffer");
-		check_mpp(mpp_buffer_inc_ref(packet_buffer),
-			  "mpp_buffer_inc_ref(packet)");
-
-		std::shared_ptr<MppPacketBufferLease> lease;
-		try {
-			lease = std::make_shared<MppPacketBufferLease>(packet_buffer,
-								group_owner);
-		} catch (...) {
-			mpp_buffer_put(packet_buffer);
-			throw;
-		}
 
 		const EncodedPacketView view = {
 			reinterpret_cast<const std::uint8_t *>(position),
@@ -366,14 +469,34 @@ private:
 			keyframe,
 			codec_config,
 			static_cast<bool>(mpp_packet_get_eos(packet)),
-			lease,
+			std::move(owner),
 		};
 		sink.consume(view);
 		stats.encoded_bytes += length;
 	}
 
+	static std::shared_ptr<const void> retain_packet_buffer(
+		MppPacket packet,
+		const std::shared_ptr<MppBufferGroupOwner> &group_owner)
+	{
+		MppBuffer packet_buffer = mpp_packet_get_buffer(packet);
+		if (!packet_buffer)
+			throw std::runtime_error("packet has no MPP buffer");
+		check_mpp(mpp_buffer_inc_ref(packet_buffer),
+			  "mpp_buffer_inc_ref(packet)");
+		try {
+			return std::make_shared<MppOwnedBufferLease>(packet_buffer,
+							       group_owner);
+		} catch (...) {
+			mpp_buffer_put(packet_buffer);
+			throw;
+		}
+	}
+
 	void initialize()
 	{
+		if (config_.packet_buffers < 1 || config_.packet_buffers > 64)
+			throw std::invalid_argument("packet buffer count must be in 1..64");
 		const MppCodingType coding = config_.codec == Codec::H264 ?
 			MPP_VIDEO_CodingAVC : MPP_VIDEO_CodingHEVC;
 
@@ -442,6 +565,8 @@ private:
 			  "mpp_buffer_group_get_internal");
 		check_mpp(mpp_buffer_get(group_owner_->group, &frame_buffer_, kFrameSize),
 			  "mpp_buffer_get(frame)");
+		packet_pool_ = std::make_shared<MppPacketBufferPool>(
+			group_owner_, static_cast<std::size_t>(config_.packet_buffers));
 	}
 
 	void set_s32(const char *name, RK_S32 value)
@@ -451,6 +576,7 @@ private:
 
 	void cleanup() noexcept
 	{
+		packet_pool_.reset();
 		if (frame_buffer_)
 			mpp_buffer_put(frame_buffer_);
 		frame_buffer_ = nullptr;
@@ -474,7 +600,9 @@ private:
 	MppApi *mpi_ = nullptr;
 	MppEncCfg cfg_ = nullptr;
 	std::shared_ptr<MppBufferGroupOwner> group_owner_;
+	std::shared_ptr<MppPacketBufferPool> packet_pool_;
 	MppBuffer frame_buffer_ = nullptr;
+	bool request_idr_after_pool_miss_ = false;
 };
 
 } // namespace camera_mpp

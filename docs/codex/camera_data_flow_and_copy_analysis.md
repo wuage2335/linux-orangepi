@@ -399,11 +399,17 @@ MPP packet buffer
 GstBuffer/GstMemory
 ```
 
-MPP不再复用单一输出buffer。每个在途packet从MPP内部group取得buffer；GStreamer
-销毁最后一个相关GstBuffer后，释放回调执行`mpp_buffer_put()`，该buffer才可回到
-group复用。group本身也由lease保持，避免encoder退出后异步释放访问失效group。
+MPP不再复用单一输出buffer，也不再每帧动态申请输出buffer。启动时按
+`packet_buffers`预分配固定池；每帧借用一个slot，GStreamer销毁最后一个相关
+GstBuffer后由lease归还slot。pool和group由lease保持，避免encoder退出后异步释放
+访问失效资源。pool耗尽时跳过当前编码帧并在下一次成功提交前请求IDR。
 RTP和RTSP的appsrc内部队列均以`queue_buffers`限制buffer数量并配置为满载时丢弃
 最旧buffer；下游queue使用相同数量限制，避免慢客户端令MPP lease无限积累。
+
+板端1/2/3/4 buffer容量扫描的实际`peak_in_flight`均为1、miss均为0。1-buffer
+RTSP重连和200ms/帧慢客户端压力也保持peak1/零miss，因此当前架构的实测最小值
+是1；默认使用2提供安全余量。CPU7绑核A/B中动态输出、固定1-buffer与固定2-buffer
+均约4–5% CPU，固定池的已证实收益是内存有界，不宣称进一步降低了CPU。
 
 Host和aarch64板端测试均验证包装后的`GstBuffer`映射地址等于原packet地址，并
 验证owner在GstBuffer释放前存活、释放后销毁。板端原生构建输出

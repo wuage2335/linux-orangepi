@@ -15,6 +15,7 @@ SMOKE_BIN := $(BIN_DIR)/check_streaming_build
 RTP_SINK_TEST_BIN := $(BIN_DIR)/test_gst_rtp_sink
 CONGESTION_TEST_BIN := $(BUILD)/host/test_congestion_idr_controller
 LIVE_PTS_TEST_BIN := $(BUILD)/host/test_live_pts_clock
+FIXED_POOL_TEST_BIN := $(BUILD)/host/test_fixed_slot_pool
 RTP_SOURCES := \
 	$(ROOT)/src/gst_rtp_sink.cpp \
 	$(ROOT)/src/v4l2_mpp_rtp_sender.cpp
@@ -23,6 +24,7 @@ RTSP_SOURCES := \
 	$(ROOT)/src/v4l2_mpp_rtsp_server.cpp
 SHARED_HEADERS := \
 	$(MPP_SRC)/encoded_packet_sink.hpp \
+	$(MPP_SRC)/fixed_slot_pool.hpp \
 	$(MPP_SRC)/mpp_encoder_core.hpp \
 	$(MPP_SRC)/v4l2_capture.hpp \
 	$(wildcard $(ROOT)/src/*.hpp)
@@ -34,6 +36,8 @@ CONGESTION_HEADER := $(ROOT)/src/congestion_idr_controller.hpp
 CONGESTION_TEST_SOURCE := $(ROOT)/tests/test_congestion_idr_controller.cpp
 LIVE_PTS_HEADER := $(ROOT)/src/live_pts_clock.hpp
 LIVE_PTS_TEST_SOURCE := $(ROOT)/tests/test_live_pts_clock.cpp
+FIXED_POOL_TEST_SOURCE := $(ROOT)/tests/test_fixed_slot_pool.cpp
+FIXED_POOL_HEADER := $(MPP_SRC)/fixed_slot_pool.hpp
 
 GST_MODULES := gstreamer-1.0 gstreamer-app-1.0
 GST_RTSP_MODULES := $(GST_MODULES) gstreamer-rtsp-server-1.0
@@ -44,6 +48,7 @@ RPATH := -Wl,--enable-new-dtags,-rpath,'$$ORIGIN/../lib'
 MPP_LDLIBS := -lrockchip_mpp -pthread -ldl
 
 .PHONY: all rtp rtsp smoke test-rtp-sink test-congestion test-live-pts \
+	test-fixed-slot-pool \
 	check-gst-env check-env runtime-lib clean
 
 all: rtp
@@ -96,6 +101,13 @@ $(LIVE_PTS_TEST_BIN): $(LIVE_PTS_TEST_SOURCE) $(LIVE_PTS_HEADER)
 
 test-live-pts: $(LIVE_PTS_TEST_BIN)
 	$(LIVE_PTS_TEST_BIN)
+
+$(FIXED_POOL_TEST_BIN): $(FIXED_POOL_TEST_SOURCE) $(FIXED_POOL_HEADER)
+	@mkdir -p $(dir $@)
+	$(CXX) -I$(MPP_SRC) $(CXXFLAGS) $< -pthread -o $@
+
+test-fixed-slot-pool: $(FIXED_POOL_TEST_BIN)
+	$(FIXED_POOL_TEST_BIN)
 
 $(RTP_BIN): $(RTP_SOURCES) $(SHARED_HEADERS) $(CONGESTION_HEADER) | check-env runtime-lib
 	@mkdir -p $(BIN_DIR)
