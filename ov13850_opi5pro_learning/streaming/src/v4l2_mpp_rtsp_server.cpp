@@ -230,8 +230,10 @@ void run_capture_worker(const CommandLine &command,
 			const CapturedFrame frame = capture.dequeue(result.timeouts);
 			if (have_previous) {
 				const std::uint32_t delta = frame.sequence - previous_sequence;
+				// 为 0 说明为异常帧
 				if (delta == 0)
 					++result.dropped;
+				// 大于 1 说明终究丢帧
 				else if (delta > 1)
 					result.dropped += delta - 1;
 			}
