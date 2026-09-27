@@ -1203,6 +1203,7 @@ RTSP重连、慢客户端和PM退出均通过。
 | 项目 | 当前状态 | 下一步 |
 | --- | --- | --- |
 | CPU0 TASKLET异常 | 未定位具体驱动 | ftrace/tracepoint定位callback并做停用设备A/B |
+| 当前STREAMON约1.14秒 | 历史为140.9ms，当前首帧等待仍约50.65ms；无唯一根因证据 | 分拆QBUF/VIDIOC_STREAMON内核路径，记录RKISP params状态并做有无RKAIQ A/B |
 | 3A正常实景精确光到屏延迟 | 历史值来自3A前或不同条件 | 同屏可读时钟至少5组并记录P95/长时漂移 |
 | 全SoC DDR物理读写MB/s | 仅有DMC load与CPU payload带宽 | 使用可解释的硬件计数器或trace，区分通道与方向 |
 | 原生module-info活动内核 | 候选Image已构建，活动系统仍有shim | 单变量部署Image、验证3A、保留回滚后移除shim |
