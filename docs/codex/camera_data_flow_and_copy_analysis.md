@@ -1,7 +1,7 @@
 # RK3588摄像头项目数据流、Buffer与拷贝分析
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 文档同步：2026-09-27。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
 
@@ -412,10 +412,11 @@ RTSP重连和200ms/帧慢客户端压力也保持peak1/零miss，因此当前架
 均约4–5% CPU，固定池的已证实收益是内存有界，不宣称进一步降低了CPU。
 
 Host和aarch64板端测试均验证包装后的`GstBuffer`映射地址等于原packet地址，并
-验证owner在GstBuffer释放前存活、释放后销毁。板端原生构建输出
-`BOARD_BUILD_AND_TESTS_OK`；固定controls的DMA-BUF RTP为300帧、30.04fps、
-0 timeout/drop/queue overrun，RTSP两次连接分别解码78/97帧且重连IDR恢复通过。
-退出后sensor PM为suspended/0，严格内核日志扫描没有新增Camera/MPP/IOMMU故障。
+验证owner在GstBuffer释放前存活、释放后销毁。2026-09-27复测中，固定测试图
+1/2-buffer各1500帧均peak1/miss0；固定曝光实景2-buffer的GStreamer push
+P50/P95为23.916/46.958us，MPP+sink调用P50/P95为4.368/4.453ms。1800帧RTP为
+30.05fps、0 timeout/drop/queue overrun/pool miss，RTSP两次客户端解码145/178帧
+并完成IDR恢复。退出后sensor PM为suspended/0，无新增Camera/MPP/IOMMU严格fault。
 
 `gst_app_src_push_buffer()`之后主要是GstBuffer所有权和引用传递。
 

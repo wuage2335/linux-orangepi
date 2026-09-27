@@ -1,9 +1,27 @@
 # linux-orangepi 阅读进度
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 文档同步：2026-09-27。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
+
+## 2026-09-27 当前main性能复测与troubleshooting汇总
+
+- 将当前main benchmark源码同步到板端独立测试目录，aarch64原生构建、统计和配置
+  测试通过。固定测试图下pool1/pool2各5×300帧，所有轮次peak1/miss0、CPU约3%。
+- pool2固定测试图post-DQ P50/P95为4.497/4.680ms；固定曝光实景GStreamer push
+  P50/P95为23.916/46.958us，MPP+sink为4.368/4.453ms，进程CPU约4%。
+- 1800帧RTP为30.05fps、0 timeout/drop/overrun/miss、60 IDR，CPU4%、最大RSS
+  28,292KB；RTSP两次客户端解码145/178帧，连接/断开/IDR各2次。
+- 测试温度48.076→49.000°C；结束controls恢复1536/16/96、test pattern关闭，PM
+  suspended/0、DMC 534MHz，无新增Camera/MPP/IOMMU严格fault命中。
+- 当前STREAMON约1.14秒、首帧等待约50.65ms；历史STREAMON为140.9ms。1帧诊断
+  在打印空frame-interval序列时退出，但采集本身完成；本轮没有唯一根因证据，保留
+  为启动路径差异，不归因给packet池。
+- 两份troubleshooting文档补齐SIGBUS、DFI/DMC、CPU0 TASKLET、零拷贝生命周期、
+  固定池容量和测量误区；保留学习目录原有RKAIQ/ADRC/ISP ABI详细章节。
+- 原始证据包SHA256：
+  `a148b4f8a74c516cb7f79b4d27932b129b9533cce98bb505742b2525629d502f`。
 
 ## 2026-09-18 MPP到GStreamer零拷贝候选改造
 

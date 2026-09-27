@@ -1,14 +1,14 @@
-# Orange Pi 5 Pro 内核问题与修复记录
+# Orange Pi 5 Pro 内核与摄像头链路问题修复记录
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 文档同步：2026-09-27。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
 > 最新入口：[Camera 当前状态](../docs/codex/CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
 
 > 适用项目：`linux-orangepi/ov13850_opi5pro_learning`
 > 板卡：Orange Pi 5 Pro（RK3588S）
 > 文档用途：持续记录内核构建、部署、启动、模块和摄像头 bring-up 中遇到的问题、证据、修复方法与验证结果。
-> 最后更新：2026-08-06
+> 最后更新：2026-09-27
 
 ## 1. 已验证基线（历史记录，需重新确认当前板端状态）
 
@@ -522,7 +522,7 @@ sudo sync
 
 新部署必须再创建独立的时间戳备份，不要反复覆盖这一份历史备份。
 
-## 13. 更新：OV13850 CAM2 冷启动首次 probe 失败
+## 13. 更新：OV13850 CAM2 冷启动首次 probe 失败（已解决，2026-07-28）
 
 ### 13.1 现象
 
@@ -1041,7 +1041,177 @@ V15=~/ov13850_opi5pro_learning/stage6/rkaiq-3a/runtime-v15
 真实 bright/normal/dark 三场景，AE/AWB controls 与亮度随照度
 变化合理，PNG 目视不再全局偏绿；仅剩同屏端到端延迟补录。
 
-## 27. 新问题记录模板
+## 27. 零拷贝或编码改动后帧率只有 16.57 fps（误判已排除，2026-09-18）
+
+### 27.1 现象
+
+MPP/GStreamer 零拷贝回归第一轮只有约 16.57 fps，看起来像新buffer生命周期或CPU
+开销导致性能退化。
+
+### 27.2 根因
+
+测试开始前保留了上一轮 3A 暗场 controls：
+
+```text
+exposure=1648
+analogue_gain=248
+VBLANK=1449
+```
+
+Sensor 帧周期因此接近 60 ms。编码器只是被较慢的输入节奏限制，不是处理一帧需要
+60 ms。
+
+### 27.3 正确处理
+
+性能 A/B 前显式记录并设置：
+
+```bash
+v4l2-ctl -d /dev/v4l-subdev2 \
+  --set-ctrl=vertical_blanking=96,exposure=1536,analogue_gain=16
+```
+
+恢复后同一binary立即回到 300 帧、30.04 fps、0 timeout/drop/overrun。测试结束再次
+回读 controls，并确认 PM 为 `suspended/0`。摄像头controls和video-node格式都是可变
+运行状态，不能默认沿用脚本中的名义配置。
+
+## 28. 长稳过程中运行程序收到 SIGBUS（已解决，2026-09-15）
+
+### 28.1 现象
+
+首次 3A 长稳约 663 秒后服务退出，返回信号 7（SIGBUS）。此前短回归、编码和网络
+均正常，容易误判为硬件不稳定或DMA越界。
+
+### 28.2 根因
+
+长稳运行期间另一条构建流程正在用普通 `cp` 覆盖活动release中的MPP动态库。运行
+进程已经 mmap 该 `.so`，目标文件被截断和重写后，后续执行映射页触发 SIGBUS。
+
+### 28.3 修复与预防
+
+- 动态库先复制到同目录临时文件，校验完成后用原子 rename 替换；
+- build、install、camera session 共用 `/tmp/ov13850-camera-session.lock`；
+- 活动release运行期间禁止原地构建或覆盖库；
+- 失败长稳日志保留，不能用后续成功结果覆盖。
+
+修复后固定曝光 600 秒和 3A 1800 秒长稳通过，均为 0 capture timeout/drop；退出
+PM `suspended/0`。这类故障应优先核对部署并发、inode和映射文件，不要直接修改MPP
+编码参数。
+
+## 29. DFI/DMC节点不存在，无法测DDR利用率（已修复，2026-09-16）
+
+### 29.1 现象
+
+活动内核启用了 Rockchip DFI/devfreq，但板端缺少可用的 DMC devfreq入口，无法读取
+工作频率或利用率。仅运行内存benchmark不能替代SoC总线计数。
+
+### 29.2 根因
+
+活动设备树中的DFI节点遗漏四路时钟及对应 `clock-names`，驱动无法正常注册，DMC
+保持 deferred 状态。
+
+### 29.3 修复与验证
+
+通过最小overlay只补齐DFI时钟属性，保留原Image和其他DT内容。部署、备份并重启后：
+
+- `/sys/class/devfreq/dmc` 出现；
+- 工作时DMC为2.4GHz，空闲回到534MHz；
+- 3A阶段最忙通道load均值约3.77%；
+- 完整Camera/MPP/RTSP回归通过。
+
+`load`是DFI最忙通道的busy/total比例，不是全DDR物理读写MB/s。CPU有效内存带宽、
+DMC利用率和DMA-BUF真实总线流量必须分别描述。
+
+## 30. CPU0 `ksoftirqd/0` 与 TASKLET 持续高负载（尚未定位，2026-09-16）
+
+### 30.1 现象
+
+CPU0上的`ksoftirqd/0`曾接近97%，TASKLET计数每3秒增加约19,529,492次。该状态在
+内存测试前后持续存在，不是单次benchmark瞬态。
+
+### 30.2 当前边界
+
+- 尚未定位到具体驱动或tasklet callback；
+- 尚未证明与DFI overlay、Camera或网络驱动存在因果关系；
+- CPU内存基准已避开CPU0，但不能称为无干扰整机峰值；
+- 不能用绑核后结果掩盖根因。
+
+后续应使用softirq分类计数、tracepoint/ftrace、驱动级回调定位和停用候选设备的
+单变量实验。该问题仍是当前最主要的未解决后台负载项。
+
+## 31. MPP到GStreamer去掉copy后出现buffer覆盖风险（已解决，2026-09-18）
+
+### 31.1 风险
+
+旧实现复用单个MPP packet buffer，并立即把几十KB H.264复制到GstBuffer，因此
+`consume()`返回后可安全覆盖。若只把`gst_buffer_fill()`替换成外部内存包装，下一帧
+可能在GStreamer仍引用旧数据时覆盖同一buffer，产生花屏或损坏码流。
+
+### 31.2 修复
+
+- `EncodedPacketView`携带共享owner；
+- GStreamer使用`gst_buffer_new_wrapped_full()`包装同一地址；
+- destroy callback在最后一个GstBuffer释放后归还slot；
+- MPP group生命周期由lease保持；
+- appsrc和下游queue均设置buffer上限及downstream leaky策略；
+- pool耗尽时跳过当前编码帧，下一次成功提交前请求IDR，禁止覆盖在途数据。
+
+host和板端测试证明GstBuffer映射地址等于原packet地址，owner释放时机正确；RTP、
+RTSP重连、慢客户端和PM退出均通过。
+
+## 32. 需要多少个MPP输出buffer，以及固定池是否降低CPU（已实测，2026-09-18）
+
+### 32.1 初始疑问
+
+根据appsrc、queue、parser/payloader的理论并发，曾保守估计需要6到8个输出buffer。
+但队列深度不等于MPP原始packet同时被引用的数量，必须记录真实peak和miss。
+
+### 32.2 实测结果
+
+- RTP使用1/2/3/4个buffer各300帧，全部30.03–30.04fps、0 miss；
+- 1-buffer RTSP两次连接分别解码141/176帧，0 miss；
+- 客户端每个access unit故意等待200ms、持续20秒时，服务端主动丢旧packet维持
+  低延迟，但MPP pool仍peak=1、miss=0；
+- 默认保留2个buffer，给未覆盖的调度和异常路径保留一个安全余量；
+- pool miss、peak和recovery IDR必须写入验收日志，不能只检查采集drop。
+
+### 32.3 CPU结论
+
+零拷贝把GStreamer push P50从历史约60.67us降到约23us，但固定池、动态池、1-buffer
+和2-buffer在CPU7绑核A/B中都约4–5% CPU。固定池的确定收益是DMA输出内存有严格
+上限，不能声称进一步显著降低了CPU。每帧shared owner、GstMemory和引用管理仍有
+成本；只有新的同条件A/B支持时才能继续声称优化。
+
+## 33. 测量和构建环境造成的常见误判（边界说明，2026-09-27）
+
+1. `gst_app_src_push_buffer()`返回只表示入队，不表示UDP/TCP发送完成，更不表示PC已
+   解码和Present；软件打点不能代替光到屏同屏测试。
+2. 进程RSS通常不完整包含DRM/DMA heap内存；零拷贝buffer池容量不能只用RSS判断。
+3. 8Mbps是长期码率目标，IDR和P帧大小不固定；不能用平均33KB推断每帧网络完成
+   时间上限。
+4. WSL host测试不能链接aarch64 MPP动态库；`skipping incompatible`表示架构错误，
+   应构建独立x86 host SDK，板端再原生aarch64构建。
+5. GStreamer开发包安装可能触发initramfs更新；板端安装工具后重启前必须复查
+   `/boot/uInitrd`。
+6. 短测试CPU受调度、缓存和ondemand调频影响。使用交替多轮、相同controls、必要时
+   绑核，并同时报告user/system CPU、RSS、帧率、drop和温度。
+7. RKISP启动时在未运行RKAIQ的条件下可能出现`waiting on params stream on event
+   timeout`。若后续采集、帧率、PM和fault检查均通过，这是“没有首个IQ参数”的已知
+   背景，不能单凭该行认定ISP硬件失败。
+
+## 34. 当前仍未关闭的问题与后续方向
+
+| 项目 | 当前状态 | 下一步 |
+| --- | --- | --- |
+| CPU0 TASKLET异常 | 未定位具体驱动 | ftrace/tracepoint定位callback并做停用设备A/B |
+| 3A正常实景精确光到屏延迟 | 历史值来自3A前或不同条件 | 同屏可读时钟至少5组并记录P95/长时漂移 |
+| 全SoC DDR物理读写MB/s | 仅有DMC load与CPU payload带宽 | 使用可解释的硬件计数器或trace，区分通道与方向 |
+| 原生module-info活动内核 | 候选Image已构建，活动系统仍有shim | 单变量部署Image、验证3A、保留回滚后移除shim |
+| V4L2 control event订阅 | compliance 42/43 | 作为独立标准化改进，不混入流媒体优化 |
+| 未连接OV13855 DT节点 | 启动日志仍有ID `000000` | 单独清理设备树并做启动/media graph回归 |
+| RGA输出DMA-BUF到MPP | 当前1080p主链绕过RGA | 有resize业务时建立统一pool与同步/fence验证 |
+| 网络到显示端全链零拷贝 | 只验证到MPP→GStreamer payload | 分别审计RTP分包、socket、驱动和Windows解码surface |
+
+## 35. 新问题记录模板
 
 后续遇到问题时，在本文末尾按以下模板追加：
 

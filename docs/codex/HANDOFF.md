@@ -1,9 +1,23 @@
 # RK3588 摄像头链路任务交接文档
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 文档同步：2026-09-27。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
+
+## 2026-09-27 当前main性能复测
+
+- 当前main的V4L2→MPP DMA-BUF、MPP→GStreamer payload零拷贝和固定2-buffer pool
+  已按历史5×300帧口径复测；pool1/pool2实际峰值均为1、0 miss。
+- 固定测试图pool2：post-DQ P50/P95 4.497/4.680ms，CPU 3%；固定曝光实景：
+  GStreamer push 23.916/46.958us，MPP+sink 4.368/4.453ms，CPU 4%。
+- 1800帧RTP为30.05fps、0 timeout/drop/overrun/miss；RTSP重连两次解码145/178帧。
+  退出controls恢复1536/16/96、PM suspended/0、DMC 534MHz，无新增严格fault。
+- 当前STREAMON均值约1.14秒，高于历史140.9ms，尚无唯一根因证据；首帧等待仍约
+  50.65ms。光到屏、3A、RGA和DDR物理带宽未在本轮重测。
+- troubleshooting已补齐2026-08-30之后的已解决问题、测量陷阱和未关闭问题清单。
+- 证据包：`Camera开发/metrics-refresh-work/camera-metrics-refresh-20260927.tar.gz`，
+  SHA256 `a148b4f8a74c516cb7f79b4d27932b129b9533cce98bb505742b2525629d502f`。
 
 ## 2026-09-16 DDR读写基准补充
 
@@ -14,7 +28,7 @@
   驱动。本轮避开CPU0，结果仍需带此条件，不能宣称无干扰峰值或全DDR物理流量。
 - 详见[DDR读写基准](ddr_cpu_bandwidth_validation.md)。应用源码未因该实验改动。
 
-> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-09-16（Asia/Shanghai）。
+> 用途：在新建 Codex 对话时快速恢复任务上下文。最后更新：2026-09-27（Asia/Shanghai）。
 
 ## 2026-09-16 重启后验证
 

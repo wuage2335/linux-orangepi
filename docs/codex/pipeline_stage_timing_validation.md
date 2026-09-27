@@ -1,9 +1,68 @@
 # RK3588摄像头链路分阶段耗时实测
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
+> 文档同步：2026-09-27。本文保留其标注日期的设计或验收条件，历史待办不等同于当前待办。
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
+
+## 2026-09-27：固定packet池与payload零拷贝复测
+
+本轮使用已合并到`main`的MPP→GStreamer payload零拷贝和固定MPP packet buffer池。
+环境仍为Orange Pi 5 Pro、内核`6.1.99-opi5pro-livecfg-baseline`、1920x1080 NV12、
+H.264 CBR 8Mbps、GOP30、V4L2 4 buffers、接收端为板端loopback RTP。统计仍采用
+nearest-rank；每组5轮、每轮预热30帧并记录300帧。
+
+固定测试图条件为`test_pattern=1/exposure=1000/gain=16/VBLANK=96`。1-buffer和
+2-buffer各1500帧均为0 timeout/drop/queue overrun/pool miss，实际
+`peak_in_flight=1`。工程默认继续使用2个packet buffer提供一个安全余量。
+
+### 最新固定测试图结果
+
+| 项目 | 1-buffer P50/P95/P99 | 2-buffer P50/P95/P99 |
+| --- | ---: | ---: |
+| 帧周期 | 33.280/33.280/33.280ms | 33.280/33.280/33.280ms |
+| SOF到DQBUF | 28.043/28.063/28.077ms | 28.042/28.064/28.069ms |
+| MPP+sink调用 | 4.357/4.403/4.423ms | 4.217/4.399/4.421ms |
+| GStreamer push | 23.916/47.250/49.000us | 23.916/47.250/49.874us |
+| MPP扣除sink | 4.333/4.369/4.387ms | 4.185/4.366/4.384ms |
+| QBUF | 0.277/0.296/0.302ms | 0.277/0.297/0.301ms |
+| DQ到重新QBUF | 4.635/4.682/4.702ms | 4.497/4.680/4.698ms |
+
+2-buffer固定测试图5轮进程CPU均为3%；平均/最大RSS为27,790/27,800KB。1-buffer
+除首轮冷态RSS为28,808KB外，其余约27,780–27,792KB。两种容量没有稳定性能差异，
+固定池的主要收益是MPP输出DMA内存有明确上限。
+
+### 最新固定曝光实景结果
+
+`test_pattern=0/exposure=1000/gain=16/VBLANK=96`、2-buffer共1500帧：
+
+| 项目 | Mean | P50 | P95 | P99 |
+| --- | ---: | ---: | ---: | ---: |
+| 帧周期 | 33.280ms | 33.280ms | 33.280ms | 33.280ms |
+| SOF到DQBUF | 28.052ms | 28.062ms | 28.065ms | 28.078ms |
+| MPP+sink调用 | 4.360ms | 4.368ms | 4.453ms | 4.481ms |
+| GStreamer push | 25.313us | 23.916us | 46.958us | 49.583us |
+| MPP扣除sink | 4.335ms | 4.343ms | 4.426ms | 4.449ms |
+| DQ到重新QBUF | 4.628ms | 4.646ms | 4.732ms | 4.764ms |
+
+进程CPU五轮平均4%，平均/最大RSS为27,918/28,400KB。相比2026-09-02真实码率下
+GStreamer copy+push P50/P95 60.67/89.83us，当前payload共享路径为
+23.916/46.958us；但场景内容和输出字节数随画面变化，因此只将其作为当前配置的
+观测对比，不把全部差异归因给单一函数。
+
+### 稳定性与启动边界
+
+- 1800帧RTP：30.05fps、0 timeout/drop/queue overrun/pool miss、60 IDR；进程CPU
+  4%，最大RSS 28,292KB，约59.91秒输出33,694,722字节。
+- RTSP两次客户端分别解码145/178帧，2次连接/断开/IDR请求通过。
+- 测试前后温度48.076→49.000°C；结束后controls恢复1536/16/96、test pattern关闭，
+  sensor PM为`suspended/0`，DMC回到534MHz，无新增Camera/MPP/IOMMU严格fault命中。
+- 当前5轮`STREAMON`均值约1.142秒，明显高于2026-09-02的140.9ms；返回后等待首个
+  DQBUF仍约50.65ms。当前源码没有显式1秒sleep，本轮新增dmesg也没有唯一根因证据，
+  因此记录为环境/驱动启动路径差异，尚不能归因给packet池或RKAIQ params等待。
+
+原始证据包：`Camera开发/metrics-refresh-work/camera-metrics-refresh-20260927.tar.gz`，
+SHA256为`a148b4f8a74c516cb7f79b4d27932b129b9533cce98bb505742b2525629d502f`。
 
 ## 1. 测试目的
 

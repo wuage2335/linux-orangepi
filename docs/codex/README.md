@@ -1,9 +1,15 @@
 # RK3588 Camera 项目 Codex 文档入口
 
 <!-- camera-status-navigation -->
-> 文档同步：2026-09-16。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
+> 文档同步：2026-09-27。历史数据按原测试条件保留；当前阶段、环境、结果与待办统一见状态入口。
 > 最新入口：[Camera 当前状态](CURRENT_STATUS.md)。
 <!-- /camera-status-navigation -->
+
+2026-09-27补充：当前main固定packet池与payload零拷贝性能复测已写入
+[`pipeline_stage_timing_validation.md`](pipeline_stage_timing_validation.md)和
+[`camera_pipeline_quantitative_results.md`](camera_pipeline_quantitative_results.md)；
+2026-08-30之后的故障、测量陷阱和未关闭问题已补入
+[`orangepi5pro-kernel-troubleshooting.md`](orangepi5pro-kernel-troubleshooting.md)。
 
 2026-09-16补充：[DDR读写基准与测量边界](ddr_cpu_bandwidth_validation.md)。
 

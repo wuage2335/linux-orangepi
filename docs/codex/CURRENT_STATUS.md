@@ -1,4 +1,4 @@
-# Camera 项目当前状态（2026-09-16）
+# Camera 项目当前状态（2026-09-27）
 
 本页统一描述最新状态；带日期的设计、计划和验收报告保留当时条件。历史数字不能
 替代当前场景结果，CPU内存基准不能替代全SoC DDR总线流量。
@@ -23,11 +23,11 @@
 阶段0–6已验收：驱动/DTS、RKISP、RGA实验、MPP编码、RTP/RTSP、RKAIQ/3A、性能
 与稳定性。阶段7功能扩展尚未实施。
 
-- 2026-09-18隔离分支`codex/mpp-gstreamer-zero-copy`完成MPP packet到GStreamer
+- 2026-09-18合并到`main`的改造完成MPP packet到GStreamer
   的payload零拷贝：共享owner保持MPP输出buffer，GstBuffer包装同一地址，appsrc
   与下游queue均有界。板端300帧DMA-BUF RTP为30.04fps、0 timeout/drop/overrun，
   RTSP两次连接解码与IDR恢复通过；证据位于板端`zero-copy-20260918/evidence/`。
-- 同分支后续增加固定MPP packet buffer池，默认2个。板端1–4 buffer扫描及慢客户端
+- 随后增加固定MPP packet buffer池，默认2个。板端1–4 buffer扫描及慢客户端
   压力中实际峰值始终为1，1-buffer也保持30.04fps、RTSP重连解码和0 pool miss，
   因而实测最小值为1；默认2用于保留安全余量。固定池CPU与动态池同为约4–5%，
   主要收益是DMA输出内存有严格上限。证据位于`two-buffer-20260918/evidence/`。
@@ -46,6 +46,10 @@
 
 | 实验 | 结果 | 证据 |
 | --- | --- | --- |
+| 最新固定测试图、pool2，5×300帧 | 30.05fps；post-DQ P50/P95 4.497/4.680ms；CPU 3%；peak1/miss0 | [阶段耗时](pipeline_stage_timing_validation.md) |
+| 最新固定曝光实景、pool2，5×300帧 | push P50/P95 23.916/46.958us；MPP+sink 4.368/4.453ms；CPU 4% | 同上 |
+| 最新RTP 1800帧 | 30.05fps，0 timeout/drop/overrun/miss，60 IDR，RSS峰值28,292KB | 同上 |
+| 最新RTSP重连 | 客户端解码145/178帧，连接/断开/IDR各2次，退出PM通过 | 同上 |
 | 固定曝光600秒 | 18011帧，30.05fps，0采集timeout/drop | [工程收口](engineering_closeout_validation.md) |
 | 3A实景1800秒 | 44591帧，24.76fps，0采集timeout/drop，重连及PM退出通过 | 同上 |
 | 3A资源 | server/RKAIQ平均CPU 3.344%/3.689%，SoC峰值60.076°C | 同上，单核100%口径 |
@@ -57,6 +61,8 @@
 3A会随照度延长曝光/VTS，不能保证所有实景30fps。2026-08-28的五组同屏延迟
 60/70/10/160/60ms（均值72ms）仍是历史Stage5条件下的样本，不能当作当前3A
 显示延迟或P95。各轮测试的温度、照度、帧率和客户端负载必须和数字一起引用。
+最新复测未运行RKAIQ，也未重测光到屏延迟、RGA或DDR物理带宽。当前STREAMON
+均值约1.14秒，高于历史140.9ms，尚未定位唯一根因，不能归因给固定packet池。
 
 ## 未完成与当前选择
 
